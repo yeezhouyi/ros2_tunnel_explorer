@@ -1,0 +1,20 @@
+repositories:
+  navigation2_tutorials:
+    type: git
+    url: https://github.com/ros-navigation/navigation2_tutorials.git
+    version: rolling
+
+  m_explore_ros2:
+    type: git
+    url: https://github.com/robo-friends/m-explore-ros2.git
+    version: main
+
+  frontier_exploration_ros2:
+    type: git
+    url: https://github.com/mertgulerx/frontier_exploration_ros2.git
+    version: main
+
+  autonomous_exploration_benchmark:
+    type: git
+    url: https://github.com/mertgulerx/autonomous-exploration-demo-benchmark.git
+    version: main

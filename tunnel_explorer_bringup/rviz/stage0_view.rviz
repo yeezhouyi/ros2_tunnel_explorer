@@ -1,0 +1,75 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+    - Class: rviz_default_plugins/Map
+      Name: Map
+      Topic:
+        Depth: 1
+        Reliability Policy: 1
+        Value: /map
+      Enabled: true
+    - Class: rviz_default_plugins/Map
+      Name: Global Costmap
+      Topic:
+        Depth: 1
+        Reliability Policy: 1
+        Value: /global_costmap/costmap_raw
+      Enabled: false
+    - Class: rviz_default_plugins/Map
+      Name: Local Costmap
+      Topic:
+        Depth: 1
+        Reliability Policy: 1
+        Value: /local_costmap/costmap_raw
+      Enabled: false
+    - Class: rviz_default_plugins/Path
+      Name: Global Plan
+      Topic:
+        Depth: 1
+        Reliability Policy: 1
+        Value: /plan
+      Enabled: true
+    - Class: rviz_default_plugins/Path
+      Name: Local Plan
+      Topic:
+        Depth: 1
+        Reliability Policy: 1
+        Value: /local_plan
+      Enabled: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: LaserScan
+      Topic:
+        Depth: 1
+        Reliability Policy: 1
+        Value: /scan
+      Enabled: true
+  Global Options:
+    Fixed Frame: map
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/SetGoal
+    - Class: rviz_default_plugins/PublishPoint
+    - Class: rviz_default_plugins/SetInitialPose
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 6.0
+      Focal Point: [0.0, 0.0, 0.0]
+      Pitch: 0.785
+      Yaw: 0.785

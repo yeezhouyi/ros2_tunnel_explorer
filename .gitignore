@@ -1,0 +1,32 @@
+# Build artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code (local config only)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ROS bags (large binaries)
+benchmark_tools/bags/*.db3
+benchmark_tools/bags/*.yaml
+
+# Generated reports (track scripts, not output)
+benchmark_tools/reports/*
+benchmark_tools/plots/*
+!benchmark_tools/reports/.gitkeep
+!benchmark_tools/plots/.gitkeep
