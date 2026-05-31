@@ -4,7 +4,7 @@ project(tunnel_explorer_bringup)
 find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY launch config rviz
-  DESTINATION share/
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

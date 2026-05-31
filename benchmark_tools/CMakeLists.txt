@@ -4,11 +4,11 @@ project(benchmark_tools)
 find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY scenarios bags
-  DESTINATION share/
+  DESTINATION share/${PROJECT_NAME}
 )
 
 install(PROGRAMS scripts/record_stage0_metrics.py
-  DESTINATION lib/
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
