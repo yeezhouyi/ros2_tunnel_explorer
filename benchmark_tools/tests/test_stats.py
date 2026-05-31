@@ -349,3 +349,78 @@ class TestComputeNavigationSummary:
         summary = compute_navigation_summary(results)
         assert summary['results'] == results
 
+    # ── New status fields ─────────────────────────────────────────────
+
+    def test_rejected_status(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 3.0},
+            {'status': 'REJECTED', 'duration_s': 0.0},
+            {'status': 'SUCCEEDED', 'duration_s': 4.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 3
+        assert summary['succeeded'] == 2
+        assert summary['rejected'] == 1
+        assert summary['success_rate'] == round(2 / 3, 3)
+
+    def test_timed_out_status(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 5.0},
+            {'status': 'TIMED_OUT', 'duration_s': 30.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 2
+        assert summary['timed_out'] == 1
+        assert summary['succeeded'] == 1
+        assert summary['success_rate'] == 0.5
+
+    def test_skipped_status(self):
+        results = [
+            {'status': 'ABORTED', 'duration_s': 5.0},
+            {'status': 'SKIPPED', 'duration_s': 0.0},
+            {'status': 'SKIPPED', 'duration_s': 0.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 3
+        assert summary['skipped'] == 2
+        assert summary['failed'] == 1
+        assert summary['success_rate'] == round(0.0, 3)
+
+    def test_all_new_statuses_together(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 3.0},
+            {'status': 'ABORTED', 'duration_s': 5.0},
+            {'status': 'CANCELED', 'duration_s': 2.0},
+            {'status': 'REJECTED', 'duration_s': 0.0},
+            {'status': 'TIMED_OUT', 'duration_s': 30.0},
+            {'status': 'SKIPPED', 'duration_s': 0.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 6
+        assert summary['succeeded'] == 1
+        assert summary['failed'] == 1
+        assert summary['canceled'] == 1
+        assert summary['rejected'] == 1
+        assert summary['timed_out'] == 1
+        assert summary['skipped'] == 1
+        assert summary['unknown'] == 0
+        assert summary['success_rate'] == round(1 / 6, 3)
+
+    def test_unknown_after_all_statuses(self):
+        """unknown should only count statuses not in any recognised category."""
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 1.0},
+            {'status': 'MYSTERIOUS', 'duration_s': 5.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['succeeded'] == 1
+        assert summary['unknown'] == 1
+        assert summary['success_rate'] == 0.5
+
+    def test_empty_all_counters_are_zero(self):
+        summary = compute_navigation_summary([])
+        for key in ('total', 'succeeded', 'failed', 'canceled',
+                    'rejected', 'timed_out', 'skipped', 'unknown'):
+            assert summary[key] == 0
+        assert summary['success_rate'] is None
+
