@@ -31,11 +31,12 @@ tunnel-aware scoring variants.
 
    - Maximum wall-clock duration is 600 s (safety cap)
    - When the explorer enters the COMPLETED state (all frontiers explored),
-     the benchmark waits a 20 s grace period
+     the benchmark waits a 20 s grace period (configurable).
+   - **Only new goal dispatch** resets the grace timer. SLAM map updates,
+     marker refreshes, and state-machine re-evaluations do NOT reset it.
    - If the robot remains in COMPLETED for the full grace window (no new
-     goals dispatched, no re-evaluation triggered by SLAM map updates),
-     the run ends early
-   - If new goals appear during the grace window, the timer resets
+     goals dispatched), the run ends early with `run_status=COMPLETED` and
+     `stable_completion_detected=true`.
 7. Kill all processes
 8. Extract metrics from explorer log
 9. Repeat 5×
@@ -53,14 +54,60 @@ After each run, the benchmark assigns one of:
 
 | Status | Meaning |
 |--------|---------|
-| `COMPLETED` | Explorer reached COMPLETED state and stayed there for the grace window |
+| `COMPLETED` | Exploration finished within the max duration |
 | `TIMEOUT` | Max duration reached before exploration completed |
+| `STALLED` | Explorer process alive but no progress for N seconds (DDS stall, SLAM freeze, TF timeout, action server hang) |
 | `CRASHED` | Explorer node died prematurely |
 | `STARTUP_FAILED` | Nav2 not ready after max retry attempts |
-| `INVALID_ORCHESTRATION_TERMINATION` | Run was externally terminated (e.g., task killed) or outputs are incomplete |
+| `INVALID_ORCHESTRATION_TERMINATION` | Run was externally terminated or outputs incomplete |
+
+### STALLED Detection
+
+STALLED indicates the explorer process is alive but making no progress.
+It is distinct from TIMEOUT (ran for max duration) and CRASHED (process died).
+
+**Progress events**: The monitor loop tracks the last progress event timestamp.
+Only the following log patterns refresh the progress timer (map updates are NOT
+progress events — SLAM may publish identical maps even when the robot is stuck):
+
+- `Goal accepted by Nav2 server` — goal dispatched
+- `Navigation to goal succeeded` — goal completed
+- `Navigation aborted` — genuine failure (still progress)
+- `Goal timed out after` — goal timed out (still progress)
+
+**Threshold**: `--stall-timeout-seconds` (default: 90 s). If no progress event
+occurs within the threshold and the run is not in stable COMPLETED, the run
+is classified as STALLED.
+
+**STALLED is not an algorithm failure**: The nearest-frontier algorithm did
+not cause the stall. Root causes in the current environment include:
+
+- **DDS action server stall**: Under WSL2, Fast DDS action server communication
+  can block the ROS2 executor, preventing timer callbacks from firing. The explorer
+  gets stuck in NAVIGATING state.
+- **SLAM Toolbox freeze**: Occasionally SLAM stops publishing map updates.
+- **TF timeout**: Transform lookup blocks if a frame chain is interrupted.
+- **State machine deadlock**: A race between goal result and map callback.
+
+**Mitigation**: In the WSL2 test environment, limited automatic retries
+(`--runtime-retries`) are allowed. Each retry runs `cleanup_simulation.sh`
+and starts fresh. CRASHED runs are NOT automatically retried.
 
 Only `COMPLETED` runs are included in cross-run aggregation by default.
 `TIMEOUT` runs can be included with `--allow-timeout`.
+
+### STALLED Injection (Test Only)
+
+A deterministic STALLED injection mechanism exists for verifying the detection
+path end-to-end:
+
+- Parameter: `--inject-stall-after-seconds` (default: 0 = disabled)
+- When > 0: after N seconds, the runner stops refreshing the progress timestamp
+- The explorer continues running normally, but the runner waits for
+  `STALL_TIMEOUT_SECONDS` without progress, then classifies the run as STALLED
+- The injection activation epoch is recorded for precise timing verification
+- **Test only**: formal benchmarks must NOT use this flag
+- Runs with `injected_stall_enabled=true` are always excluded from algorithm aggregation
 
 ## Metrics per Run
 
@@ -69,11 +116,15 @@ Only `COMPLETED` runs are included in cross-run aggregation by default.
 | Metric | Source |
 |--------|--------|
 | Run status | Enum from termination condition |
-| Completion detected | Whether COMPLETED state was ever observed |
-| Completion time | Wall-clock seconds from explorer start to COMPLETED detection |
-| Completed grace seconds | Grace window configured |
+| Completion reset count | JSON `completion_reset_count` |
+| Completion reset reason | JSON `completion_reset_reason` |
+| Stable completion | JSON `stable_completion_detected` |
 | Max duration | Safety cap |
 | Explorer active duration | Total time explorer was running |
+| Stall detected | Monitor loop progress check |
+| Stall timeout seconds | `--stall-timeout-seconds` parameter |
+| Stalled after seconds | Elapsed time at STALLED detection |
+| Last progress event | Most recent progress event string |
 
 ### Exploration Efficiency
 
@@ -110,15 +161,31 @@ Only `COMPLETED` runs are included in cross-run aggregation by default.
 
 ## Cross-Run Aggregation (after 5 runs)
 
-The aggregation script (`scripts/aggregate_stage2a_results.sh`) reads each
-run's `benchmark_results.md` and `rosbag_metrics.json`, filters to valid runs,
-and computes median/min/max for each metric.
+The aggregation script uses per-attempt `benchmark_results.json` as the source of
+truth (not markdown tables).
 
-Only `COMPLETED` runs are included by default. `TIMEOUT` runs can be included
-with `--allow-timeout`. `CRASHED`, `STARTUP_FAILED`, and
-`INVALID_ORCHESTRATION_TERMINATION` runs are always excluded.
+### Three-Layer Classification
 
-Excluded runs are listed with their status in the output report.
+**Algorithm Outcomes** (included in performance stats):
+- `COMPLETED` with `stable_completion_detected=true`
+- `TIMEOUT` (transparently reported with count)
+
+**Algorithm Exclusions** (listed, not aggregated):
+- `COMPLETED` but `injected_stall_enabled=true` (test runs)
+- `COMPLETED` but `stable_completion_detected=false` (candidate never stabilized)
+
+**Infrastructure Exclusions** (never in algorithm stats):
+- `STALLED`
+- `CRASHED`
+- `STARTUP_FAILED`
+- `INVALID_ORCHESTRATION_TERMINATION`
+
+TIMEOUT runs can be included in aggregation with `--allow-timeout`.
+
+### Injected Test Hard Filter
+
+Runs with `injected_stall_enabled=true` are always excluded from algorithm
+aggregation, even if they somehow produce COMPLETED status.
 
 ## Offline Analysis (from rosbag)
 
@@ -134,6 +201,9 @@ These analyses require post-processing scripts (not built in v1 of the
 benchmark runner).
 
 ## Expected Outcomes
+
+> **Note**: STALLED runs may occur due to WSL2 DDS issues. These are excluded
+> from formal aggregation. Allow up to 1-2 STALLED runs per 5-run batch.
 
 Based on Stage 1C smoke test (single run, 5 min):
 

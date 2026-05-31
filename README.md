@@ -214,7 +214,8 @@ early. The primary metric becomes **time-to-completion** rather than goals-per-t
   --duration 600 \
   --run-id 01 \
   --stop-on-completed true \
-  --completed-grace-seconds 20
+  --completed-grace-seconds 20 \
+  --stall-timeout-seconds 90
 ```
 
 ### Full benchmark (5 runs)
@@ -226,7 +227,8 @@ for i in $(seq -w 1 5); do
     --duration 600 \
     --run-id "${i}" \
     --stop-on-completed true \
-    --completed-grace-seconds 20
+    --completed-grace-seconds 20 \
+    --stall-timeout-seconds 90
   sleep 10
 done
 ```
@@ -243,8 +245,10 @@ separately. Use `--allow-timeout` to include `TIMEOUT` runs.
 ### Each run produces
 
 - `benchmark_results.md` — goals, success rate, unique goals, run status, completion time
+- `benchmark_results.json` — structured JSON metrics (used by aggregation)
 - `frontier_explorer.log` — full explorer log
 - `bag/` — ROS2 bag with `/map`, `/odom`, `/cmd_vel`, `/tf`, markers
+- `attempt_NN/` — per-attempt subdirectory (when `--runtime-retries > 0`)
 
 Run with `--wait-time 90` on WSL2 to account for DDS discovery delay (default).
 
@@ -254,9 +258,27 @@ Run with `--wait-time 90` on WSL2 to account for DDS discovery delay (default).
 |--------|---------|
 | `COMPLETED` | Exploration finished within the max duration |
 | `TIMEOUT` | Max duration reached before completion |
+| `STALLED` | Explorer alive but no progress for N seconds (DDS/SLAM/TF stall) |
 | `CRASHED` | Explorer node crashed during run |
 | `STARTUP_FAILED` | Nav2 not ready after retries |
 | `INVALID_ORCHESTRATION_TERMINATION` | Run externally terminated or outputs incomplete |
+
+### STALLED Injection Test
+
+For verifying the STALLED detection path:
+
+```bash
+./scripts/run_stage2a_benchmark.sh \
+  --output-dir ~/stage2a_benchmark_test \
+  --duration 180 \
+  --run-id stall_test \
+  --stop-on-completed true \
+  --stall-timeout-seconds 45 \
+  --inject-stall-after-seconds 20
+```
+
+Expected: run enters STALLED at ~65 s (20 + 45, with ±5 s monitor jitter).
+This is a **test-only** feature. Formal benchmarks must not use `--inject-stall-after-seconds`.
 
 ## Documentation
 
