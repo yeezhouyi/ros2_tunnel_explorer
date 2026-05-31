@@ -15,9 +15,20 @@
 #
 # aggregate_stage2a_results.sh
 #
-# Aggregate 5-run Stage 2A benchmark results into a cross-run summary.
-# Only includes COMPLETED (or --allow-timeout) runs in the statistics.
-# Excluded runs are reported with their status and directory path.
+# Aggregate Stage 2A benchmark results from per-attempt benchmark_results.json
+# files.  Three-layer classification:
+#
+#   1. Algorithm Outcomes
+#      - COMPLETED  (stable_completion_detected == true)
+#      - TIMEOUT    (included only with --allow-timeout)
+#   2. Algorithm Exclusions
+#      - COMPLETED but injected_stall_enabled == true
+#      - COMPLETED but stable_completion_detected == false
+#   3. Infrastructure Exclusions
+#      - STALLED, CRASHED, STARTUP_FAILED, INVALID_ORCHESTRATION_TERMINATION
+#
+# For each run directory the BEST (last) attempt with a
+# benchmark_results.json is used.
 #
 # Usage:
 #   ./scripts/aggregate_stage2a_results.sh <results-dir> [--allow-timeout]
@@ -31,11 +42,9 @@ set -euo pipefail
 RESULTS_DIR="${1:-${HOME}/stage2a_benchmark}"
 SCRIPT_NAME="$(basename "$0")"
 ALLOW_TIMEOUT=false
-ALLOWED_STATUSES="COMPLETED"
 
 if [ $# -ge 2 ] && [ "$2" = "--allow-timeout" ]; then
   ALLOW_TIMEOUT=true
-  ALLOWED_STATUSES="COMPLETED TIMEOUT"
 fi
 
 if [ ! -d "${RESULTS_DIR}" ]; then
@@ -43,230 +52,353 @@ if [ ! -d "${RESULTS_DIR}" ]; then
   exit 1
 fi
 
-# ── Helper: compute median, min, max ──────────────────────────────────
-stats() {
-  local -a values=()
-  while IFS= read -r val; do
-    val="${val//[^0-9.]/}"
-    [ -n "${val}" ] && values+=("${val}")
+echo "[${SCRIPT_NAME}] Aggregating results from ${RESULTS_DIR}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 1: Python classification + statistics
+# ─────────────────────────────────────────────────────────────────────────────
+# Variables are passed via the environment so the heredoc can be single-quote
+# delimited (no unwanted shell expansion inside the Python code).
+export _AGGR_RESULTS_DIR="${RESULTS_DIR}"
+export _AGGR_ALLOW_TIMEOUT="${ALLOW_TIMEOUT}"
+
+PY_SCRIPT=$(mktemp /tmp/aggregate_stage2a_XXXXXXXX.py)
+cat > "${PY_SCRIPT}" << 'PYEOF'
+import json
+import os
+from pathlib import Path
+
+base_dir = Path(os.environ["_AGGR_RESULTS_DIR"])
+allow_timeout = os.environ.get("_AGGR_ALLOW_TIMEOUT", "false").lower() == "true"
+
+run_dirs = sorted([d for d in base_dir.iterdir() if d.name.startswith("run_")])
+
+# ── Three-layer buckets ──────────────────────────────────────────────────
+algorithm_completed = []   # (run_id, data)
+algorithm_timeout   = []   # (run_id, data)
+algorithm_excluded  = []   # (run_id, reason, data)
+infra_excluded      = []   # (run_id, status, data)
+injected_runs       = []   # (run_id, status, data)
+
+for run_dir in run_dirs:
+    attempt_dirs = sorted([d for d in run_dir.iterdir() if d.name.startswith("attempt_")])
+
+    best_data = None
+    for attempt_dir in reversed(attempt_dirs):
+        json_file = attempt_dir / "benchmark_results.json"
+        if json_file.exists():
+            best_data = json.loads(json_file.read_text())
+            break
+
+    if best_data is None:
+        continue  # no JSON found for this run — skip
+
+    run_id = run_dir.name
+    status = best_data.get("run_status", "")
+    injected = best_data.get("injected_stall_enabled", False)
+    stable   = best_data.get("stable_completion_detected", False)
+
+    if injected:
+        injected_runs.append((run_id, status, best_data))
+    elif status == "COMPLETED" and stable:
+        algorithm_completed.append((run_id, best_data))
+    elif status == "TIMEOUT":
+        algorithm_timeout.append((run_id, best_data))
+    elif status == "COMPLETED" and not stable:
+        algorithm_excluded.append((run_id, "NOT_STABLE", best_data))
+    else:
+        infra_excluded.append((run_id, status, best_data))
+
+# ── Statistics helpers (on algorithm COMPLETED only) ─────────────────────
+
+def compute_stats(values):
+    """Return {median, min, max} from a list of numbers."""
+    if not values:
+        return {"median": "N/A", "min": "N/A", "max": "N/A"}
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 0:
+        median = (s[n // 2 - 1] + s[n // 2]) / 2.0
+    else:
+        median = float(s[n // 2])
+    return {
+        "median": round(median, 1),
+        "min": round(s[0], 1),
+        "max": round(s[-1], 1),
+    }
+
+
+def g(d, key, default=0):
+    """Safely get a numeric field."""
+    v = d.get(key)
+    if v is None:
+        return default
+    return v
+
+
+comp_ct   = [g(r[1], "completion_time_seconds", 0) for r in algorithm_completed]
+comp_g    = [g(r[1], "goals_dispatched") for r in algorithm_completed]
+comp_s    = [g(r[1], "goals_succeeded") for r in algorithm_completed]
+comp_u    = [g(r[1], "unique_goal_bins") for r in algorithm_completed]
+comp_rv   = [g(r[1], "revisit_rate", 0) for r in algorithm_completed]
+comp_rch  = [g(r[1], "reachability_rate", 0) for r in algorithm_completed]
+
+# ── Build output ─────────────────────────────────────────────────────────
+
+completed_table = []
+for run_id, d in algorithm_completed:
+    completed_table.append({
+        "run_id": run_id,
+        "status": "COMPLETED",
+        "goals_dispatched": g(d, "goals_dispatched"),
+        "goals_succeeded": g(d, "goals_succeeded"),
+        "unique_goal_bins": g(d, "unique_goal_bins"),
+        "revisit_rate": g(d, "revisit_rate", 0),
+        "reachability_rate": g(d, "reachability_rate", 0),
+        "completion_time_seconds": g(d, "completion_time_seconds", 0),
+    })
+
+timeout_table = []
+for run_id, d in algorithm_timeout:
+    timeout_table.append({
+        "run_id": run_id,
+        "goals_dispatched": g(d, "goals_dispatched"),
+        "goals_succeeded": g(d, "goals_succeeded"),
+        "unique_goal_bins": g(d, "unique_goal_bins"),
+        "revisit_rate": g(d, "revisit_rate", 0),
+        "reachability_rate": g(d, "reachability_rate", 0),
+    })
+
+excluded_table = []
+for run_id, reason, d in algorithm_excluded:
+    excluded_table.append({
+        "run_id": run_id,
+        "status": d.get("run_status", ""),
+        "reason": reason,
+    })
+for run_id, status, _d in injected_runs:
+    excluded_table.append({
+        "run_id": run_id,
+        "status": status,
+        "reason": "INJECTED_STALL",
+    })
+for run_id, status, _d in infra_excluded:
+    excluded_table.append({
+        "run_id": run_id,
+        "status": status,
+        "reason": status,
+    })
+
+infra_counts = {}
+for _run_id, status, _d in infra_excluded:
+    infra_counts[status] = infra_counts.get(status, 0) + 1
+
+result = {
+    "total_run_dirs": len(run_dirs),
+    "algorithm_total": len(algorithm_completed) + len(algorithm_timeout),
+    "completion_count": len(algorithm_completed),
+    "timeout_count": len(algorithm_timeout),
+    "completed_table": completed_table,
+    "timeout_table": timeout_table,
+    "excluded_table": excluded_table,
+    "infra_counts": infra_counts,
+    "stats": {
+        "completion_time_seconds": compute_stats(comp_ct),
+        "goals_dispatched": compute_stats(comp_g),
+        "goals_succeeded": compute_stats(comp_s),
+        "unique_goal_bins": compute_stats(comp_u),
+        "revisit_rate": compute_stats(comp_rv),
+        "reachability_rate": compute_stats(comp_rch),
+    },
+}
+
+print(json.dumps(result))
+PYEOF
+DATA_JSON=$(python3 "${PY_SCRIPT}" 2>/dev/null || echo '{"error":"classification_step_failed"}')
+rm -f "${PY_SCRIPT}"
+
+# Validate Python output
+if ! echo "${DATA_JSON}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+assert 'total_run_dirs' in d
+" 2>/dev/null; then
+  echo "[${SCRIPT_NAME}] Error: classification step failed." >&2
+  echo "${DATA_JSON}" >&2
+  exit 1
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 2: Bash helpers to extract data from the JSON classification result
+# ─────────────────────────────────────────────────────────────────────────────
+
+# get_val KEY  - extract a top-level string/number value from DATA_JSON
+get_val() {
+  echo "${DATA_JSON}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+v = d.get('$1', 'N/A')
+print(v)
+" 2>/dev/null || echo "N/A"
+}
+
+# get_table_json TABLE-NAME  - dump a JSON array from DATA_JSON so its
+# contents can be consumed row-by-row in a pipe.
+get_table_json() {
+  echo "${DATA_JSON}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+rows = d.get('$1', [])
+print(json.dumps(rows))
+" 2>/dev/null || echo "[]"
+}
+
+# stat_cell METRIC FIELD  - extract a single stat cell (median/min/max)
+stat_cell() {
+  echo "${DATA_JSON}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+s = d.get('stats', {}).get('$1', {})
+print(s.get('$2', 'N/A'))
+" 2>/dev/null || echo "N/A"
+}
+
+# ── Top-level counts ─────────────────────────────────────────────────────
+TOTAL_RUN_DIRS=$(get_val "total_run_dirs")
+ALGORITHM_TOTAL=$(get_val "algorithm_total")
+COMPLETION_COUNT=$(get_val "completion_count")
+TIMEOUT_COUNT=$(get_val "timeout_count")
+EXCLUDED_COUNT=$(echo "${DATA_JSON}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(len(d.get('excluded_table', [])))
+" 2>/dev/null || echo "0")
+
+# Completion rate (avoid division by zero)
+if [ "${ALGORITHM_TOTAL}" -gt 0 ] 2>/dev/null; then
+  COMPLETION_RATE=$((100 * COMPLETION_COUNT / ALGORITHM_TOTAL))
+else
+  COMPLETION_RATE="N/A"
+fi
+
+# ── Helper: print a markdown table row ──────────────────────────────────
+md_row() {
+  printf "| %s" "$1"
+  shift
+  for col in "$@"; do
+    printf " | %s" "${col}"
   done
-
-  local count="${#values[@]}"
-  [ "${count}" -eq 0 ] && { echo "N/A N/A N/A"; return; }
-
-  IFS=$'\n' sorted=($(sort -n <<<"${values[*]}"))
-  unset IFS
-
-  local min="${sorted[0]}"
-  local max="${sorted[$((count - 1))]}"
-  local mid=$((count / 2))
-
-  if [ $((count % 2)) -eq 0 ] && [ "${count}" -ge 2 ]; then
-    local median
-    median=$(echo "scale=1; (${sorted[$((mid - 1))]} + ${sorted[${mid}]}) / 2" | bc)
-    echo "${median} ${min} ${max}"
-  else
-    echo "${sorted[${mid}]} ${min} ${max}"
-  fi
+  printf " |\n"
 }
 
-# ── Collect run directories ───────────────────────────────────────────
-declare -a RUN_DIRS=()
-for d in "${RESULTS_DIR}"/run_*; do
-  [ -f "${d}/benchmark_results.md" ] && RUN_DIRS+=("${d}")
-done
-
-RUN_COUNT="${#RUN_DIRS[@]}"
-echo "[${SCRIPT_NAME}] Found ${RUN_COUNT} run(s) in ${RESULTS_DIR}"
-[ "${RUN_COUNT}" -eq 0 ] && { echo "[${SCRIPT_NAME}] No runs found." >&2; exit 1; }
-
-# ── Extract helpers ───────────────────────────────────────────────────
-extract() {
-  local file="$1" pattern="$2"
-  grep -iE "${pattern}" "${file}" 2>/dev/null | grep -oP '\b[0-9]+(\.[0-9]+)?' | head -1 || echo "0"
-}
-
-extract_str() {
-  local file="$1" pattern="$2"
-  grep -iE "${pattern}" "${file}" 2>/dev/null | head -1 | sed 's/.*| *//; s/ *|.*//; s/^ *//; s/ *$//' || echo ""
-}
-
-# ── Classify runs ─────────────────────────────────────────────────────
-declare -a VALID_DIRS=()
-declare -a EXCLUDED_DIRS=()
-declare -a EXCLUDED_REASONS=()
-
-for d in "${RUN_DIRS[@]}"; do
-  md="${d}/benchmark_results.md"
-  run_status="$(extract_str "${md}" "Run status")"
-
-  case "${run_status}" in
-    COMPLETED)
-      VALID_DIRS+=("${d}")
-      ;;
-    TIMEOUT)
-      if ${ALLOW_TIMEOUT}; then
-        VALID_DIRS+=("${d}")
-      else
-        EXCLUDED_DIRS+=("${d}")
-        EXCLUDED_REASONS+=("TIMEOUT (use --allow-timeout to include)")
-      fi
-      ;;
-    CRASHED|STARTUP_FAILED|INVALID_ORCHESTRATION_TERMINATION)
-      EXCLUDED_DIRS+=("${d}")
-      EXCLUDED_REASONS+=("${run_status}")
-      ;;
-    "")
-      EXCLUDED_DIRS+=("${d}")
-      EXCLUDED_REASONS+=("unknown (run_status not found)")
-      ;;
-    *)
-      EXCLUDED_DIRS+=("${d}")
-      EXCLUDED_REASONS+=("${run_status}")
-      ;;
-  esac
-done
-
-VALID_COUNT="${#VALID_DIRS[@]}"
-EXCLUDED_COUNT="${#EXCLUDED_DIRS[@]}"
-
-echo "[${SCRIPT_NAME}] Valid runs: ${VALID_COUNT}, Excluded: ${EXCLUDED_COUNT}"
-
-# ── Extract metrics from valid runs only ──────────────────────────────
-G_LIST=""; S_LIST=""; T_LIST=""; A_LIST=""; R_LIST=""
-U_LIST=""; RP_LIST=""; RV_LIST=""; F_LIST=""
-MN_LIST=""; MX_LIST=""; MC_LIST=""; XC_LIST=""
-ST_LIST=""; TR_LIST=""; CV_LIST=""
-CT_LIST=""  # completion time
-
-for d in "${VALID_DIRS[@]}"; do
-  md="${d}/benchmark_results.md"
-
-  g=$(extract "${md}" "Goals dispatched")
-  s=$(extract "${md}" "Goals succeeded")
-  t=$(extract "${md}" "Goals timed out")
-  a=$(extract "${md}" "Goals aborted")
-  r=$(extract "${md}" "Goal reachability")
-  u=$(extract "${md}" "Unique goal bins")
-  rp=$(extract "${md}" "Repeated goals")
-  rv=$(extract "${md}" "Revisit rate")
-  f=$(extract "${md}" "filter activations")
-  mn=$(extract "${md}" "Min goal distance")
-  mx=$(extract "${md}" "Max goal distance")
-  mc=$(extract "${md}" "Min cluster cells")
-  xc=$(extract "${md}" "Max cluster cells")
-  st=$(extract "${md}" "Nav2 startup attempts" | head -1)
-  ct=$(extract "${md}" "Completion time")
-
-  G_LIST="${G_LIST}${g} "; S_LIST="${S_LIST}${s} "; T_LIST="${T_LIST}${t} "
-  A_LIST="${A_LIST}${a} "; R_LIST="${R_LIST}${r} "
-  U_LIST="${U_LIST}${u} "; RP_LIST="${RP_LIST}${rp} "; RV_LIST="${RV_LIST}${rv} "
-  F_LIST="${F_LIST}${f} "
-  MN_LIST="${MN_LIST}${mn} "; MX_LIST="${MX_LIST}${mx} "
-  MC_LIST="${MC_LIST}${mc} "; XC_LIST="${XC_LIST}${xc} "
-  ST_LIST="${ST_LIST}${st} "; CT_LIST="${CT_LIST}${ct} "
-
-  # Rosbag metrics
-  json="${d}/rosbag_metrics.json"
-  if [ -f "${json}" ]; then
-    tr=$(python3 -c "import json; print(json.load(open('${json}')).get('travel_distance_m', 0))" 2>/dev/null || echo "0")
-    cv=$(python3 -c "import json; d=json.load(open('${json}')); print(d.get('map_coverage', {}).get('coverage_proxy', 0))" 2>/dev/null || echo "0")
-  else
-    tr="0"; cv="0"
-  fi
-  TR_LIST="${TR_LIST}${tr} "; CV_LIST="${CV_LIST}${cv} "
-done
-
-# ── Compute statistics ────────────────────────────────────────────────
-row() {
-  local name="$1" list="$2" unit="$3"
-  read -r med min max <<< "$(echo "${list}" | tr ' ' '\n' | grep -v '^$' | stats)"
-  printf "| %-37s | %8s | %8s | %8s |\n" "${name}" "${med}" "${min}" "${max}"
-}
-
-# ── Write output ──────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 3: Write aggregated report
+# ─────────────────────────────────────────────────────────────────────────────
 OUTPUT="${RESULTS_DIR}/aggregated_results.md"
 {
   echo "# Stage 2A: Cross-Run Aggregated Results"
   echo ""
-  echo "- Total runs: ${RUN_COUNT}"
-  echo "- Valid runs: ${VALID_COUNT} (${ALLOWED_STATUSES})"
-  echo "- Excluded:   ${EXCLUDED_COUNT}"
-  echo "- Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "- Tag: stage1c-nearest-frontier-pass"
+  echo "- Total run directories: ${TOTAL_RUN_DIRS}"
+  echo "- Algorithm runs total: ${ALGORITHM_TOTAL}"
+  echo "- Algorithm COMPLETED: ${COMPLETION_COUNT}"
+  echo "- Algorithm TIMEOUT: ${TIMEOUT_COUNT}"
+  echo "- Completion rate: ${COMPLETION_RATE}%"
   echo ""
 
+  # ─────── Algorithm Outcomes ─────────────────────────────────────────────
+  echo "## Algorithm Outcomes"
+  echo ""
+  md_row "Run ID" "Status" "Goals" "Succeeded" "Unique" "Revisit %" "Reach %" "Completion (s)"
+  md_row "---" "---" "---" "---" "---" "---" "---" "---"
+
+  # Completed rows
+  COMPLETED_JSON=$(get_table_json "completed_table")
+  echo "${COMPLETED_JSON}" | python3 -c "
+import json, sys
+rows = json.load(sys.stdin)
+for r in rows:
+    print(f\"| {r['run_id']} | {r['status']} | {r['goals_dispatched']} | {r['goals_succeeded']} | {r['unique_goal_bins']} | {r['revisit_rate']} | {r['reachability_rate']} | {r['completion_time_seconds']} |\")
+" 2>/dev/null
+
+  # Timeout rows (only when --allow-timeout)
+  if [ "${ALLOW_TIMEOUT}" = "true" ]; then
+    TIMEOUT_JSON=$(get_table_json "timeout_table")
+    echo "${TIMEOUT_JSON}" | python3 -c "
+import json, sys
+rows = json.load(sys.stdin)
+for r in rows:
+    print(f\"| {r['run_id']} | TIMEOUT | {r['goals_dispatched']} | {r['goals_succeeded']} | {r['unique_goal_bins']} | {r['revisit_rate']} | {r['reachability_rate']} | N/A |\")
+" 2>/dev/null
+  fi
+  echo ""
+
+  # ─────── Time-to-Completion ─────────────────────────────────────────────
+  echo "### Time-to-Completion (stable COMPLETED only)"
+  echo ""
+  TTC_MED=$(stat_cell "completion_time_seconds" "median")
+  TTC_MIN=$(stat_cell "completion_time_seconds" "min")
+  TTC_MAX=$(stat_cell "completion_time_seconds" "max")
+  echo "${TTC_MED} / ${TTC_MIN} / ${TTC_MAX} s"
+  echo ""
+
+  # ─────── Exploration Efficiency ─────────────────────────────────────────
+  echo "### Exploration Efficiency (COMPLETED runs)"
+  echo ""
+  md_row "Metric" "Median" "Min" "Max"
+  md_row "---" "---" "---" "---"
+
+  for entry in \
+    "goals_dispatched:Goals dispatched" \
+    "goals_succeeded:Goals succeeded" \
+    "unique_goal_bins:Unique goal bins" \
+    "revisit_rate:Revisit rate (%)" \
+    "reachability_rate:Reachability rate (%)"
+  do
+    KEY="${entry%%:*}"
+    LABEL="${entry#*:}"
+    MED=$(stat_cell "${KEY}" "median")
+    MIN=$(stat_cell "${KEY}" "min")
+    MAX=$(stat_cell "${KEY}" "max")
+    md_row "${LABEL}" "${MED}" "${MIN}" "${MAX}"
+  done
+  echo ""
+
+  # ─────── Excluded Runs ──────────────────────────────────────────────────
   if [ "${EXCLUDED_COUNT}" -gt 0 ]; then
     echo "## Excluded Runs"
     echo ""
-    echo "| Run | Status |"
-    echo "|-----|--------|"
-    for i in "${!EXCLUDED_DIRS[@]}"; do
-      dirname="$(basename "${EXCLUDED_DIRS[$i]}")"
-      echo "| ${dirname} | ${EXCLUDED_REASONS[$i]} |"
-    done
+    echo "### Algorithm Exclusions (injected or incomplete)"
+    echo ""
+    md_row "Run" "Status" "Reason"
+    md_row "---" "---" "---"
+
+    EXCLUDED_JSON=$(get_table_json "excluded_table")
+    echo "${EXCLUDED_JSON}" | python3 -c "
+import json, sys
+rows = json.load(sys.stdin)
+for r in rows:
+    if r.get('reason') in ('INJECTED_STALL', 'NOT_STABLE'):
+        print(f\"| {r['run_id']} | {r.get('status','')} | {r.get('reason','')} |\")
+" 2>/dev/null
+
+    echo ""
+    echo "### Infrastructure Exclusions"
+    echo ""
+    md_row "Status" "Count"
+    md_row "---" "---"
+
+    echo "${DATA_JSON}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for status in sorted(d.get('infra_counts', {}).keys()):
+    cnt = d['infra_counts'][status]
+    print(f\"| {status} | {cnt} |\")
+" 2>/dev/null
     echo ""
   fi
 
-  if [ "${VALID_COUNT}" -eq 0 ]; then
-    echo "**No valid runs to aggregate.**"
-    echo ""
-    echo "---"
-    echo "Generated by ${SCRIPT_NAME}"
-    tee "${OUTPUT}"
-    echo "[${SCRIPT_NAME}] No valid runs — output written to ${OUTPUT}" >&2
-    exit 0
-  fi
-
-  echo "## Exploration Efficiency"
-  echo ""
-  echo "| Metric | Median | Min | Max |"
-  echo "|--------|--------|-----|-----|"
-  row "Goals dispatched"          "${G_LIST}"  ""
-  row "Goals succeeded"           "${S_LIST}"  ""
-  row "Goals timed out"           "${T_LIST}"  ""
-  row "Goals aborted"             "${A_LIST}"  ""
-  row "Reachability rate (%)"     "${R_LIST}"  ""
-  row "Unique goal bins (0.25m)"  "${U_LIST}"  ""
-  row "Repeated goals"            "${RP_LIST}" ""
-  row "Revisit rate (%)"          "${RV_LIST}" ""
-  echo ""
-  echo "## Goal Quality"
-  echo ""
-  echo "| Metric | Median | Min | Max |"
-  echo "|--------|--------|-----|-----|"
-  row "Filter activations"        "${F_LIST}"  ""
-  row "Min goal distance (m)"     "${MN_LIST}" ""
-  row "Max goal distance (m)"     "${MX_LIST}" ""
-  echo ""
-  echo "## Cluster Characteristics"
-  echo ""
-  echo "| Metric | Median | Min | Max |"
-  echo "|--------|--------|-----|-----|"
-  row "Min cluster cells"         "${MC_LIST}" ""
-  row "Max cluster cells"         "${XC_LIST}" ""
-  echo ""
-  echo "## System Stability"
-  echo ""
-  echo "| Metric | Median | Min | Max |"
-  echo "|--------|--------|-----|-----|"
-  row "Nav2 startup attempts"     "${ST_LIST}" ""
-  echo ""
-  echo "## Completion"
-  echo ""
-  echo "| Metric | Median | Min | Max |"
-  echo "|--------|--------|-----|-----|"
-  row "Completion time (s)"       "${CT_LIST}" ""
-  echo ""
-  echo "## Offline Metrics (from rosbag)"
-  echo ""
-  echo "| Metric | Median | Min | Max |"
-  echo "|--------|--------|-----|-----|"
-  row "Travel distance (m)"       "${TR_LIST}" ""
-  row "Coverage proxy"            "${CV_LIST}" ""
-  echo ""
   echo "---"
   echo "Generated by ${SCRIPT_NAME}"
 } | tee "${OUTPUT}"
 
-echo "[${SCRIPT_NAME}] Done."
+echo "[${SCRIPT_NAME}] Aggregation written to ${OUTPUT}"
