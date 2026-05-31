@@ -58,6 +58,7 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   exploration_period_seconds_ = declare_parameter<double>(
     "exploration_period_seconds", 1.0);
   cooldown_seconds_ = declare_parameter<double>("cooldown_seconds", 1.0);
+  goal_timeout_seconds_ = declare_parameter<double>("goal_timeout_seconds", 60.0);
   min_cluster_size_ = declare_parameter<int>("min_cluster_size", 10);
   free_threshold_ = declare_parameter<int>("free_threshold", 0);
   frontier_neighbor_connectivity_ = declare_parameter<int>(
@@ -252,6 +253,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
 
       // Store for blacklisting on failure.
         current_goal_ = goal_pt;
+        navigating_start_time_ = this->now();
 
       // Send goal.
         auto send_opts = rclcpp_action::Client<
@@ -273,9 +275,27 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         return;
       }
 
-    case ExplorationState::NAVIGATING:
-      // Awaiting action result — idle.
-      return;
+    case ExplorationState::NAVIGATING: {
+        if (goal_timeout_seconds_ > 0.0 && current_goal_) {
+          const double elapsed = (this->now() - navigating_start_time_).seconds();
+          if (elapsed >= goal_timeout_seconds_) {
+            RCLCPP_WARN(
+              get_logger(), "Goal timed out after %.1f s — cancelling", elapsed);
+            // Blacklist before cancelling to prevent re-selection.
+            const auto t = std::chrono::steady_clock::now();
+            blacklist_.add(
+              *current_goal_, t, blacklist_radius_,
+              std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::duration<double>(blacklist_timeout_seconds_)));
+            RCLCPP_INFO(
+              get_logger(), "Blacklisted (%.2f, %.2f) for %.0f s",
+              current_goal_->x, current_goal_->y, blacklist_timeout_seconds_);
+            action_client_->async_cancel_all_goals();
+            transitionTo(ExplorationState::COOLDOWN);
+          }
+        }
+        return;
+      }
 
     case ExplorationState::COOLDOWN: {
         const double elapsed = (this->now() - cooldown_start_).seconds();

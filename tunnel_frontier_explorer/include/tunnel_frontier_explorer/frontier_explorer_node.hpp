@@ -97,6 +97,7 @@ private:
   // ── Parameters ───────────────────────────────────────────────────────
   double exploration_period_seconds_;
   double cooldown_seconds_;
+  double goal_timeout_seconds_;
   std::size_t min_cluster_size_;
   int free_threshold_;
   int frontier_neighbor_connectivity_;
@@ -114,6 +115,7 @@ private:
   ExplorationState state_ = ExplorationState::WAITING_FOR_MAP;
   std::optional<nav_msgs::msg::OccupancyGrid> latest_map_;
   rclcpp::Time cooldown_start_;
+  rclcpp::Time navigating_start_time_;
   std::optional<Point2D> current_goal_;
 
   // Consecutive empty frontier cycles before entering COMPLETED.
