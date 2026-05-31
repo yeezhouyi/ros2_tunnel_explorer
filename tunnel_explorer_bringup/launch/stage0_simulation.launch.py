@@ -39,11 +39,11 @@ def generate_launch_description():
 
     # Arguments
     rviz_arg = DeclareLaunchArgument(
-        'rviz', default_value='true',
+        'rviz', default_value='True',
         description='Launch RViz2 with stage0 custom config'
     )
     headless_arg = DeclareLaunchArgument(
-        'headless', default_value='false',
+        'headless', default_value='False',
         description='Run Gazebo headless (no GUI)'
     )
 
