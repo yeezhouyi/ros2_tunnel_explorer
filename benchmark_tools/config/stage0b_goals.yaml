@@ -1,0 +1,134 @@
+# Stage 0B Navigation Smoke Test Goals
+#
+# These are EXAMPLE goal poses for a TurtleBot3 in the nav2_minimal_tb3_sim
+# sandbox world. Coordinates MUST be adjusted to match your current map.
+#
+# Before running the smoke test:
+#   1. Launch the simulation and let SLAM build a map.
+#   2. Note the coordinate range visible in RViz.
+#   3. Update the x/y/yaw values below to reachable positions on your map.
+#   4. Keep goals simple: straight-line, no sharp turns, clear of obstacles.
+#
+# Default sandbox world is roughly 8m x 8m open arena.
+# The robot starts near (0.0, 0.0) facing +X.
+
+goals:
+  - description: "Forward 1m"
+    frame_id: "map"
+    position:
+      x: 1.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - description: "Forward 2m"
+    frame_id: "map"
+    position:
+      x: 2.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - description: "Left turn 90deg"
+    frame_id: "map"
+    position:
+      x: 2.0
+      y: 1.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.707
+      w: 0.707
+
+  - description: "Left turn further"
+    frame_id: "map"
+    position:
+      x: 1.0
+      y: 2.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.707
+      w: 0.707
+
+  - description: "Right turn 180deg (turn around)"
+    frame_id: "map"
+    position:
+      x: -1.0
+      y: 2.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - description: "Diagonal return"
+    frame_id: "map"
+    position:
+      x: -1.5
+      y: 0.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.707
+      w: 0.707
+
+  - description: "Near obstacle (adjust to known obstacle location)"
+    frame_id: "map"
+    position:
+      x: 0.5
+      y: -1.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - description: "Far corner"
+    frame_id: "map"
+    position:
+      x: 3.0
+      y: 2.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: -0.707
+      w: 0.707
+
+  - description: "Left wall approach"
+    frame_id: "map"
+    position:
+      x: 2.5
+      y: -1.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - description: "Return to start vicinity"
+    frame_id: "map"
+    position:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0

@@ -11,3 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from benchmark_tools.stats import (  # noqa: F401
+    check_duration,
+    compute_navigation_summary,
+    compute_topic_stats,
+    percentile,
+)

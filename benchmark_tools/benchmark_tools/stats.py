@@ -23,6 +23,38 @@ import time
 # limitations under the License.
 
 
+def check_duration(actual_s, requested_s, tolerance_s=2.0):
+    """
+    Check whether the actual recording duration meets the requested duration
+    within a tolerance.
+
+    This accounts for timing granularity in shutdown timers: a 600 s request
+    may record 599.0 s of wall time, which is acceptable.
+
+    Arguments
+    ---------
+    actual_s -- observed wall-clock recording duration
+    requested_s -- target recording duration
+    tolerance_s -- allowed shortfall (default 2.0)
+
+    Returns
+    -------
+    dict with 'pass', 'actual_s', 'requested_s', 'tolerance_s',
+    'shortfall_s', and 'shortfall_within_tolerance' keys.
+
+    """
+    shortfall = max(0.0, requested_s - actual_s)
+    within = shortfall <= tolerance_s
+    return {
+        'pass': within,
+        'actual_s': round(actual_s, 1),
+        'requested_s': requested_s,
+        'tolerance_s': tolerance_s,
+        'shortfall_s': round(shortfall, 1),
+        'shortfall_within_tolerance': within,
+    }
+
+
 def percentile(sorted_values, p):
     """
     Compute the p-th percentile of a sorted list.
@@ -153,3 +185,63 @@ def compute_topic_stats(timestamps, start_time, warmup_end_time,
     steady = phase_stats(steady_ts, steady_duration)
 
     return full, steady
+
+
+def compute_navigation_summary(results):
+    """
+    Compute summary statistics from a list of navigation goal results.
+
+    ``results`` is a list of dicts, each with at minimum:
+
+    - ``status`` (str): one of SUCCEEDED, ABORTED, CANCELED, UNKNOWN
+    - ``duration_s`` (float): wall-clock seconds the goal took
+
+    Optional keys: ``description``, ``error_msg``, ``index``.
+
+    Returns a dict with:
+
+    - ``total``
+    - ``succeeded``
+    - ``failed`` (ABORTED)
+    - ``canceled``
+    - ``unknown``
+    - ``success_rate`` (float 0.0–1.0, or None if total is 0)
+    - ``total_duration_s``
+    - ``mean_duration_s`` per goal
+    - ``results`` (the input list, for serialisation)
+
+    """
+    if not results:
+        return {
+            'total': 0,
+            'succeeded': 0,
+            'failed': 0,
+            'canceled': 0,
+            'unknown': 0,
+            'success_rate': None,
+            'total_duration_s': 0.0,
+            'mean_duration_s': 0.0,
+            'results': [],
+        }
+
+    succeeded = sum(1 for r in results if r['status'] == 'SUCCEEDED')
+    failed = sum(1 for r in results if r['status'] == 'ABORTED')
+    canceled = sum(1 for r in results if r['status'] == 'CANCELED')
+    unknown = len(results) - succeeded - failed - canceled
+
+    durations = [r.get('duration_s', 0.0) for r in results]
+
+    return {
+        'total': len(results),
+        'succeeded': succeeded,
+        'failed': failed,
+        'canceled': canceled,
+        'unknown': unknown,
+        'success_rate': round(succeeded / len(results), 3),
+        'total_duration_s': round(sum(durations), 1),
+        'mean_duration_s': (
+            round(sum(durations) / len(durations), 1)
+            if durations else 0.0
+        ),
+        'results': results,
+    }

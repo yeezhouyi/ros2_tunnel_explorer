@@ -34,7 +34,7 @@ import os
 import sys
 import time
 
-from benchmark_tools.stats import compute_topic_stats
+from benchmark_tools.stats import check_duration, compute_topic_stats
 from nav_msgs.msg import OccupancyGrid
 import rclpy
 from rclpy.node import Node
@@ -50,6 +50,7 @@ class Stage0MetricsRecorder(Node):
                  output_dir: str):
         super().__init__('stage0_metrics_recorder')
         self.duration_sec = duration_sec
+        self.requested_duration_sec = duration_sec
         self.warmup_seconds = warmup_seconds
         self.output_dir = output_dir
         self.start_time = None
@@ -228,13 +229,20 @@ class Stage0MetricsRecorder(Node):
         # RTF
         rtf = self._compute_rtf()
 
+        # Duration verification
+        duration_check = check_duration(
+            actual_duration, self.requested_duration_sec, tolerance_s=2.0
+        )
+
         # Clock monotonicity summary
         clock_monotonic = self.clock_non_monotonic_count == 0
         backward_details = self.clock_backward_events[:20]
 
         return {
             'timestamp': datetime.now().isoformat(),
+            'requested_duration_seconds': self.requested_duration_sec,
             'duration_s': round(actual_duration, 1),
+            'duration_check': duration_check,
             'warmup_seconds': self.warmup_seconds,
             'warmup_end_time_iso': (
                 datetime.fromtimestamp(warmup_end).isoformat()
@@ -302,7 +310,19 @@ class Stage0MetricsRecorder(Node):
             f.write('- **Report generated**: %s\n' % now_dt.isoformat())
             f.write('- **Recording timestamp**: %s\n'
                     % report['timestamp'])
-            f.write('- **Duration**: %ss\n' % report['duration_s'])
+            f.write('- **Requested duration**: %ss\n'
+                    % report['requested_duration_seconds'])
+            f.write('- **Observed wall duration**: %ss\n'
+                    % report['duration_s'])
+            dc = report.get('duration_check', {})
+            if dc:
+                f.write('- **Duration tolerance**: %ss\n'
+                        % dc['tolerance_s'])
+                f.write('- **Shortfall**: %ss\n'
+                        % dc['shortfall_s'])
+                f.write('- **Duration PASS**: %s'
+                        ' (actual >= requested - %.1fs)\n\n'
+                        % (dc['pass'], dc['tolerance_s']))
             f.write('- **Warm-up period**: %ss\n\n'
                     % report['warmup_seconds'])
 

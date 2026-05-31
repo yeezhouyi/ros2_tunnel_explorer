@@ -10,6 +10,7 @@ install(DIRECTORY scenarios bags
 )
 
 install(PROGRAMS scripts/record_stage0_metrics.py
+          scripts/run_navigation_smoke_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

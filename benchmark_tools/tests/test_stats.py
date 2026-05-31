@@ -14,7 +14,12 @@
 
 """Unit tests for benchmark_tools.stats pure functions."""
 
-from benchmark_tools.stats import compute_topic_stats, percentile
+from benchmark_tools.stats import (
+    check_duration,
+    compute_navigation_summary,
+    compute_topic_stats,
+    percentile,
+)
 
 import pytest
 
@@ -78,6 +83,64 @@ class TestPercentile:
         data = [1, 2, 3, 4, 5]
         assert percentile(data, 0) == 1
         assert percentile(data, 100) == 5
+
+
+# ── check_duration ────────────────────────────────────────────────────────────
+
+class TestCheckDuration:
+    """Tests for the check_duration function."""
+
+    def test_exact_match(self):
+        result = check_duration(600.0, 600.0)
+        assert result['pass'] is True
+        assert result['shortfall_s'] == 0.0
+
+    def test_within_tolerance(self):
+        result = check_duration(599.0, 600.0, tolerance_s=2.0)
+        assert result['pass'] is True
+        assert result['shortfall_s'] == 1.0
+
+    def test_exceeds_tolerance(self):
+        result = check_duration(597.0, 600.0, tolerance_s=2.0)
+        assert result['pass'] is False
+        assert result['shortfall_s'] == 3.0
+
+    def test_exact_tolerance_boundary(self):
+        result = check_duration(598.0, 600.0, tolerance_s=2.0)
+        assert result['pass'] is True
+        assert result['shortfall_s'] == 2.0
+
+    def test_over_duration(self):
+        result = check_duration(610.0, 600.0)
+        assert result['pass'] is True
+        assert result['shortfall_s'] == 0.0
+
+    def test_custom_tolerance(self):
+        result = check_duration(595.0, 600.0, tolerance_s=10.0)
+        assert result['pass'] is True
+        assert result['shortfall_s'] == 5.0
+
+    def test_zero_tolerance(self):
+        result = check_duration(600.0, 600.0, tolerance_s=0.0)
+        assert result['pass'] is True
+        result = check_duration(599.5, 600.0, tolerance_s=0.0)
+        assert result['pass'] is False
+
+    def test_rounding(self):
+        result = check_duration(599.05, 600.0, tolerance_s=1.0)
+        # shortfall = max(0, 600.0 - 599.05) = 0.95
+        # round(0.95, 1) = 1.0 in Python 3.12 (banker's rounding)
+        assert result['pass'] is True
+        assert result['shortfall_within_tolerance'] is True
+
+    def test_fields_present(self):
+        result = check_duration(599.0, 600.0)
+        assert 'pass' in result
+        assert 'actual_s' in result
+        assert 'requested_s' in result
+        assert 'tolerance_s' in result
+        assert 'shortfall_s' in result
+        assert 'shortfall_within_tolerance' in result
 
 
 # ── compute_topic_stats ─────────────────────────────────────────────────────
@@ -204,3 +267,85 @@ class TestComputeTopicStats:
             ts_list, 1000.0, 1000.0, '/test', 1.0, wall_now=1100.0
         )
         assert full['mean_interval_s'] == pytest.approx(0.5, rel=0.01)
+
+
+# ── compute_navigation_summary ───────────────────────────────────────────────
+
+class TestComputeNavigationSummary:
+    """Tests for the compute_navigation_summary function."""
+
+    def test_empty_list(self):
+        summary = compute_navigation_summary([])
+        assert summary['total'] == 0
+        assert summary['success_rate'] is None
+
+    def test_all_succeeded(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 5.0},
+            {'status': 'SUCCEEDED', 'duration_s': 3.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 2
+        assert summary['succeeded'] == 2
+        assert summary['failed'] == 0
+        assert summary['success_rate'] == 1.0
+
+    def test_mixed_results(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 5.0},
+            {'status': 'SUCCEEDED', 'duration_s': 3.0},
+            {'status': 'ABORTED', 'duration_s': 8.0},
+            {'status': 'CANCELED', 'duration_s': 2.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 4
+        assert summary['succeeded'] == 2
+        assert summary['failed'] == 1
+        assert summary['canceled'] == 1
+        assert summary['success_rate'] == 0.5
+
+    def test_unknown_status(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 4.0},
+            {'status': 'UNKNOWN', 'duration_s': 0.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total'] == 2
+        assert summary['succeeded'] == 1
+        assert summary['unknown'] == 1
+        assert summary['success_rate'] == 0.5
+
+    def test_total_duration(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 10.0},
+            {'status': 'SUCCEEDED', 'duration_s': 20.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['total_duration_s'] == 30.0
+        assert summary['mean_duration_s'] == 15.0
+
+    def test_success_rate_rounding(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 1.0},
+            {'status': 'SUCCEEDED', 'duration_s': 1.0},
+            {'status': 'SUCCEEDED', 'duration_s': 1.0},
+            {'status': 'ABORTED', 'duration_s': 1.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['success_rate'] == 0.75  # 3/4
+
+    def test_zero_success_rate(self):
+        results = [
+            {'status': 'ABORTED', 'duration_s': 5.0},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['success_rate'] == 0.0
+
+    def test_output_contains_results_list(self):
+        results = [
+            {'status': 'SUCCEEDED', 'duration_s': 1.0, 'index': 0},
+            {'status': 'ABORTED', 'duration_s': 2.0, 'index': 1},
+        ]
+        summary = compute_navigation_summary(results)
+        assert summary['results'] == results
+

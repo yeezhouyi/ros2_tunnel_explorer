@@ -1,10 +1,15 @@
 # Stage 0: WSL2 Environment Feasibility Verification
 
-## Purpose
+## Overview
 
-Before developing any tunnel-specific navigation code, we must verify that the base simulation
-stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox) runs stably under WSL2 for at least
-10 minutes of continuous operation.
+Stage 0 is split into two sub-stages:
+
+- **Stage 0A — Environment Stability**: Verify that the simulation stack (TurtleBot3 +
+  Gazebo Harmonic + Nav2 + SLAM Toolbox) runs stably under WSL2 for 10 continuous
+  minutes without crashes, clock reversals, or sustained sensor gaps.
+- **Stage 0B — Navigation Functionality**: Verify that the Nav2 navigation stack can
+  execute simple NavigateToPose goals with >= 90 % success rate in the default
+  sandbox world.
 
 ## Test Infrastructure
 
@@ -15,107 +20,115 @@ stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox) runs stably under WSL
 - **SLAM**: SLAM Toolbox (online async mode)
 - **Navigation**: Nav2 (NavFn planner + DWB controller)
 
-## Acceptance Criteria
+---
 
-> **Note**: These thresholds are engineering acceptance criteria defined for this
-> project. They are NOT official Gazebo, Nav2, or ROS2 standards. The values
-> were chosen to ensure the WSL2 simulation environment is stable enough for
-> frontier exploration algorithm development in later stages.
+## Stage 0A: Environment Stability Verification
 
 ### Hard Requirements (all must pass)
 
 | # | Criterion | Measurement Method |
 |---|-----------|-------------------|
 | H1 | `/clock` is strictly monotonic (no time reversals) | `record_stage0_metrics.py` — `clock_monotonicity.strictly_monotonic` |
-| H2 | No continuous TF timeouts (> 5s gaps) | `ros2 run tf2_tools view_frames` after run |
+| H2 | No continuous TF timeouts (> 5 s gaps) | `ros2 run tf2_tools view_frames` after run |
 | H3 | Simulation runs for >= 10 min without Gazebo or RViz crash | Manual observation + process exit codes |
 
 ### Soft Thresholds
 
-Soft thresholds are evaluated against the **steady-state** phase only
-(excluding the first `--warmup-seconds` of recording, default 30 s).
-The `full` phase numbers are reported for reference but the pass/fail
-decision uses the `steady` phase.
-
 | # | Criterion | Threshold | Measurement Method |
 |---|-----------|-----------|-------------------|
 | S1 | Steady-state Real-Time Factor (RTF) median | >= 0.8 | `record_stage0_metrics.py` — `real_time_factor.steady.rtf` |
-| S2 | `/scan` steady-state average frequency | >= 90% of expected (5 Hz nominal → >= 4.5 Hz) | `record_stage0_metrics.py` — `topics.scan.steady.mean_hz` |
+| S2 | `/scan` steady-state average frequency | >= 90 % of expected (5 Hz nominal → >= 4.5 Hz) | `record_stage0_metrics.py` — `topics.scan.steady.mean_hz` |
 | S3 | `/scan` steady-state gaps > 1.0 s | 0 gaps in steady phase | `record_stage0_metrics.py` — `topics.scan.steady.gaps.count` |
 | S4 | `/map` updates arrive within update_interval + 5 s | No gaps > 10 s in any phase | `record_stage0_metrics.py` — `topics.map.*.gaps` |
-| S5 | Multi-goal navigation success rate | >= 9/10 simple goals | Manual testing via RViz `2D Goal Pose` |
 
-### Multi-Goal Navigation Test
+### Duration Boundary
 
-Send 10 navigation goals to different reachable positions in the default world:
+Recording duration is measured as:
 
-```bash
-# Example: use ros2 action to send goals programmatically
-ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose "{pose: {...}}"
+```
+pass = observed_wall_duration >= requested_duration - tolerance
 ```
 
-Or use RViz's `2D Goal Pose` tool interactively.
+where `tolerance` defaults to 2.0 s. This accounts for the shutdown-timer
+granularity that may cause the recorded wall time to fall slightly short of
+the requested value. Both `requested_duration_seconds` and
+`duration_check` are included in the JSON report.
 
-Record:
-- Number of goals reached (status = SUCCEEDED)
-- Number of failures (ABORTED / CANCELED)
-- Any recovery behaviors triggered
-
-## Procedure
-
-### 1. Launch the simulation
+### Procedure
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py
-```
+# Terminal 1: Launch simulation (headless recommended for WSL2)
+./scripts/cleanup_simulation.sh
+ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py headless:=True
 
-### 2. Start metrics recording
-
-In a second terminal:
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/install/setup.bash
+# Terminal 2: Record metrics
 ros2 run benchmark_tools record_stage0_metrics.py \
     --duration 600 \
     --warmup-seconds 30 \
     --output-dir /tmp/stage0_results
-```
 
-### 3. Monitor during the run
-
-```bash
-# Topic frequencies
+# Monitor during the run
 ros2 topic hz /clock
 ros2 topic hz /scan
-ros2 topic hz /map
 
-# TF tree health
-ros2 run tf2_tools view_frames
-```
-
-### 4. Send navigation goals
-
-Use RViz `2D Goal Pose` tool to send at least 10 goals to different
-reachable positions. Observe whether Nav2 completes each goal.
-
-### 5. Review results
-
-```bash
+# Review results
 cat /tmp/stage0_results/stage0_metrics.json
 cat /tmp/stage0_results/stage0_metrics.md
 ```
+
+---
+
+## Stage 0B: Navigation Functional Verification
+
+### Acceptance Criteria
+
+| # | Criterion | Threshold | Measurement Method |
+|---|-----------|-----------|-------------------|
+| N1 | NavigateToPose success rate | >= 90 % | `run_navigation_smoke_test.py` — `summary.success_rate` |
+| N2 | No sustained TF timeout during navigation | No continuous TF warnings in log | Manual log inspection |
+| N3 | No sustained costmap timeout during navigation | No continuous costmap warnings in log | Manual log inspection |
+| N4 | Motion `/scan` steady-state frequency | >= 4.5 Hz | Simultaneous `record_stage0_metrics.py` run |
+| N5 | Motion steady-state RTF | >= 0.8 | Simultaneous `record_stage0_metrics.py` run |
+
+### Procedure
+
+1. Complete Stage 0A first (simulation running with SLAM and Nav2 active).
+2. Run the automated smoke test:
+
+```bash
+# Terminal 3 (while simulation is running):
+ros2 run benchmark_tools run_navigation_smoke_test.py \
+    --goals src/benchmark_tools/config/stage0b_goals.yaml \
+    --output-dir /tmp/stage0b_results
+```
+
+3. Alternatively, send goals interactively via RViz `2D Goal Pose`.
+
+The smoke test sends up to 10 goals from a YAML config file sequentially,
+waiting for each to complete before sending the next. Results are written
+as JSON and Markdown reports.
+
+**Important**: The example goal coordinates in `stage0b_goals.yaml` are for the
+`nav2_minimal_tb3_sim` sandbox world. Adjust them to match your actual SLAM map
+before running.
+
+### Review Results
+
+```bash
+cat /tmp/stage0b_results/stage0b_results.json
+cat /tmp/stage0b_results/stage0b_results.md
+```
+
+---
 
 ## Outcome Decision
 
 | Result | Action |
 |--------|--------|
-| All H1-H3 pass, S1-S5 pass | Proceed to Stage 1 with WSL2 |
-| H1-H3 pass, some S fail but marginal | Proceed with documented caveats |
-| H1-H3 pass, S1 < 0.5 or S5 < 7/10 | Switch to native Ubuntu 24.04 |
-| Any H criterion fails | Switch to native Ubuntu 24.04 |
+| Stage 0A PASS, Stage 0B PASS | Proceed to Stage 1 with WSL2 |
+| Stage 0A PASS, Stage 0B marginal (>= 7/10) | Proceed with documented caveats |
+| Stage 0A PASS, Stage 0B < 7/10 | Debug Nav2 configuration, re-run 0B |
+| Stage 0A H-criterion fails | Switch to native Ubuntu 24.04 |
 
 ## Fallback: Native Ubuntu 24.04
 
@@ -131,6 +144,6 @@ After the run, fill in `benchmark_tools/reports/stage0_wsl2_report.md` with:
 - Gazebo version (`gz sim --version`)
 - ROS2 distro and key package versions
 - Actual metrics from `stage0_metrics.json`
-- Navigation goal success/failure log
+- Navigation goal success/failure log from `stage0b_results.json`
 - Screenshots of RViz during the run
 - Decision: PASS / PASS_WITH_CAVEATS / FAIL → switch to native
