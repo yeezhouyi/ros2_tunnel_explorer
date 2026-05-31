@@ -54,6 +54,10 @@ def generate_launch_description():
         'use_composition', default_value='False',
         description='Use composable nodes (default False for WSL2 DDS reliability)'
     )
+    params_file_arg = DeclareLaunchArgument(
+        'params_file', default_value=os.path.join(pkg_bringup, 'config', 'nav2_params.yaml'),
+        description='Path to Nav2 params YAML file'
+    )
 
     # Nav2 all-in-one TB3 simulation
     # We always disable the built-in RViz in tb3_simulation; launch our own below.
@@ -63,7 +67,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'slam': 'True',
-            'params_file': os.path.join(pkg_bringup, 'config', 'nav2_params.yaml'),
+            'params_file': LaunchConfiguration('params_file'),
             'use_sim_time': 'True',
             'autostart': 'True',
             'headless': LaunchConfiguration('headless'),
@@ -94,6 +98,7 @@ def generate_launch_description():
         rviz_arg,
         headless_arg,
         use_composition_arg,
+        params_file_arg,
         tb3_sim,
         rviz_node,
     ])
