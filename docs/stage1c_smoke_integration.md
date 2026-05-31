@@ -59,6 +59,7 @@ Detect frontier clusters
 | `blacklist_radius_meters` | 0.5 | Radius to blacklist around a failed goal (m) |
 | `blacklist_timeout_seconds` | 60.0 | Blacklist expiry (s) |
 | `orient_goal_toward_frontier` | true | Face robot towards goal yaw |
+| `min_goal_distance_meters` | 0.50 | Minimum distance (m) from robot to goal to prevent Nav2 instant success within xy_goal_tolerance |
 
 ## Launch Procedure
 
@@ -176,6 +177,7 @@ Add these displays in RViz:
 | `frontier_clusters` | Green | Points | Centroids of all frontier clusters |
 | `selected_goal` | Red | Sphere | Current NavigateToPose target |
 | `blacklisted` | Grey | Spheres | Temporarily forbidden failed goals |
+| `too_close_frontiers` | Yellow | Points | Candidate goals within min_goal_distance (filtered by FrontierGoalSelector) |
 
 ## Verification Criteria (5–10 min run)
 
