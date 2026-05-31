@@ -16,11 +16,11 @@ Stage 0 is split into two sub-stages:
 | Stage | Status | Notes |
 |-------|--------|-------|
 | Stage 0A (environment stability) | **PASS** | WSL2 environment verified — clock monotonic, no TF timeouts, 10 min stable |
-| Stage 0B-1 (known-free navigation) | **FAIL** — 36.4% (4/11) | ≥90% required. DWB "No valid trajectories" at >18° heading change. |
-| Stage 0B-D (DWB turn diagnosis) | **IN PROGRESS** | Minimal reproduction, RViz costmap inspection, Spin action test pending |
+| Stage 0B-1 (known-free navigation) | **PASS** | RotationShimController + 60s timeout: 10/11 = 90.9% ✅ |
+| Stage 0B-D (DWB turn diagnosis) | **COMPLETE** | All 4/4 diagnostic goals SUCCEEDED, Spin SUCCEEDED — root cause is DWB path-tracking at heading changes (H5), costmap blocking ruled out (H1–H4) |
 | Stage 1A (frontier algorithms) | **PASS** | Pure C++ unit tests pass |
 | Stage 1B (ROS2 node build) | **PASS** | Package compiles, launches, static analysis clean |
-| Stage 1C (simulation integration) | **BLOCKED** | Requires Stage 0B-1 pass for clean baseline attribution |
+| Stage 1C (simulation integration) | **READY** | Stage 0B-1 PASS (10/11 = 90.9%); proceed with Frontier Explorer simulation smoke test |
 
 ## Test Infrastructure
 
@@ -201,8 +201,8 @@ ros2 topic echo /tunnel_frontier_explorer/frontier_markers
 
 | Result | Action | Current Status |
 |--------|--------|----------------|
-| Stage 0A PASS, Stage 0B-1 PASS | Proceed to Stage 1C (Frontier Explorer) with WSL2 | — |
-| Stage 0A PASS, Stage 0B-1 FAIL (known-free goals also fail) | Diagnose Nav2 — Stage 0B-D | **ACTIVE** — 4/11 = 36.4%, DWB fail at >18° turn |
+| Stage 0A PASS, Stage 0B-1 PASS | Proceed to Stage 1C (Frontier Explorer) with WSL2 | **ACTIVE** — 10/11 = 90.9% with RotationShim + 60s timeout |
+| Stage 0A PASS, Stage 0B-1 FAIL (known-free goals also fail) | Diagnose Nav2 — Stage 0B-D | Resolved — RotationShimController + 60s timeout |
 | Stage 0A H-criterion fails | Switch to native Ubuntu 24.04 | — |
 
 ### Diagnosis Path (Stage 0B-D)
