@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright 2026 zhouyi
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Record Stage 0 environment feasibility metrics.
 
@@ -12,27 +26,25 @@ Usage:
 """
 
 import argparse
+from datetime import datetime
 import json
 import os
 import sys
 import time
-from datetime import datetime
 
+from nav_msgs.msg import OccupancyGrid
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-
-from std_msgs.msg import Float64MultiArray
-from nav_msgs.msg import OccupancyGrid
-from sensor_msgs.msg import LaserScan
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rosgraph_msgs.msg import Clock
+from sensor_msgs.msg import LaserScan
 
 
 class Stage0MetricsRecorder(Node):
     """Records message reception statistics for Stage 0 verification."""
 
     def __init__(self, duration_sec: float, output_dir: str):
-        super().__init__("stage0_metrics_recorder")
+        super().__init__('stage0_metrics_recorder')
         self.duration_sec = duration_sec
         self.output_dir = output_dir
         self.start_time = None
@@ -69,13 +81,13 @@ class Stage0MetricsRecorder(Node):
         )
 
         self.clock_sub = self.create_subscription(
-            Clock, "/clock", self.clock_cb, qos_reliable
+            Clock, '/clock', self.clock_cb, qos_reliable
         )
         self.scan_sub = self.create_subscription(
-            LaserScan, "/scan", self.scan_cb, qos_sensor
+            LaserScan, '/scan', self.scan_cb, qos_sensor
         )
         self.map_sub = self.create_subscription(
-            OccupancyGrid, "/map", self.map_cb, qos_map
+            OccupancyGrid, '/map', self.map_cb, qos_map
         )
 
         # Timer: periodic report and shutdown check
@@ -85,7 +97,7 @@ class Stage0MetricsRecorder(Node):
         self.shutdown_timer = self.create_timer(duration_sec, self.shutdown_cb)
 
         self.get_logger().info(
-            f"Stage 0 metrics recorder started. Duration: {duration_sec}s"
+            'Stage 0 metrics recorder started. Duration: %ds' % duration_sec
         )
 
     def clock_cb(self, msg: Clock):
@@ -109,19 +121,16 @@ class Stage0MetricsRecorder(Node):
     def report_timer_cb(self):
         elapsed = time.time() - (self.start_time or time.time())
         self.get_logger().info(
-            f"Elapsed: {elapsed:.0f}s | "
-            f"clock: {len(self.clock_timestamps)} msgs | "
-            f"scan: {len(self.scan_timestamps)} msgs | "
-            f"map: {len(self.map_timestamps)} msgs"
+            'Elapsed: %.0fs | clock: %d msgs | scan: %d msgs | map: %d msgs'
+            % (elapsed, len(self.clock_timestamps),
+               len(self.scan_timestamps), len(self.map_timestamps))
         )
 
     def shutdown_cb(self):
-        self.get_logger().info("Duration reached. Computing metrics...")
+        self.get_logger().info('Duration reached. Computing metrics...')
         report = self.compute_metrics()
         self.write_report(report)
-        self.get_logger().info(
-            f"Report written to {self.output_dir}"
-        )
+        self.get_logger().info('Report written to %s' % self.output_dir)
         raise SystemExit(0)
 
     def _compute_gaps(self, timestamps, gap_threshold):
@@ -133,9 +142,11 @@ class Stage0MetricsRecorder(Node):
             dt = timestamps[i] - timestamps[i - 1]
             if dt > gap_threshold:
                 gaps.append({
-                    "index": i,
-                    "duration_s": round(dt, 3),
-                    "elapsed_s": round(timestamps[i] - (self.start_time or 0), 1),
+                    'index': i,
+                    'duration_s': round(dt, 3),
+                    'elapsed_s': round(
+                        timestamps[i] - (self.start_time or 0), 1
+                    ),
                 })
         return len(gaps), gaps
 
@@ -145,24 +156,28 @@ class Stage0MetricsRecorder(Node):
 
         def stats(ts_list, label):
             if not ts_list:
-                return {"count": 0, "label": label}
+                return {'count': 0, 'label': label}
             n = len(ts_list)
             mean_hz = n / actual_duration if actual_duration > 0 else 0.0
             intervals = [
                 ts_list[i] - ts_list[i - 1] for i in range(1, n)
             ]
+            mean_iv = (
+                round(sum(intervals) / len(intervals), 4)
+                if intervals else None
+            )
             return {
-                "label": label,
-                "count": n,
-                "mean_hz": round(mean_hz, 2),
-                "min_interval_s": round(min(intervals), 4) if intervals else None,
-                "max_interval_s": round(max(intervals), 4) if intervals else None,
-                "mean_interval_s": round(sum(intervals) / len(intervals), 4) if intervals else None,
+                'label': label,
+                'count': n,
+                'mean_hz': round(mean_hz, 2),
+                'min_interval_s': round(min(intervals), 4) if intervals else None,
+                'max_interval_s': round(max(intervals), 4) if intervals else None,
+                'mean_interval_s': mean_iv,
             }
 
-        clock_stats = stats(self.clock_timestamps, "/clock")
-        scan_stats = stats(self.scan_timestamps, "/scan")
-        map_stats = stats(self.map_timestamps, "/map")
+        clock_stats = stats(self.clock_timestamps, '/clock')
+        scan_stats = stats(self.scan_timestamps, '/scan')
+        map_stats = stats(self.map_timestamps, '/map')
 
         # Gap analysis
         clock_gaps_count, clock_gaps = self._compute_gaps(
@@ -176,31 +191,31 @@ class Stage0MetricsRecorder(Node):
         )
 
         return {
-            "timestamp": datetime.now().isoformat(),
-            "duration_s": round(actual_duration, 1),
-            "topics": {
-                "clock": clock_stats,
-                "scan": scan_stats,
-                "map": map_stats,
+            'timestamp': datetime.now().isoformat(),
+            'duration_s': round(actual_duration, 1),
+            'topics': {
+                'clock': clock_stats,
+                'scan': scan_stats,
+                'map': map_stats,
             },
-            "monotonicity": {
-                "clock_non_monotonic_count": self.clock_non_monotonic_count,
+            'monotonicity': {
+                'clock_non_monotonic_count': self.clock_non_monotonic_count,
             },
-            "gaps": {
-                "clock": {
-                    "threshold_s": self.clock_gap_threshold,
-                    "count": clock_gaps_count,
-                    "details": clock_gaps[:10],
+            'gaps': {
+                'clock': {
+                    'threshold_s': self.clock_gap_threshold,
+                    'count': clock_gaps_count,
+                    'details': clock_gaps[:10],
                 },
-                "scan": {
-                    "threshold_s": self.scan_gap_threshold,
-                    "count": scan_gaps_count,
-                    "details": scan_gaps[:10],
+                'scan': {
+                    'threshold_s': self.scan_gap_threshold,
+                    'count': scan_gaps_count,
+                    'details': scan_gaps[:10],
                 },
-                "map": {
-                    "threshold_s": self.map_gap_threshold,
-                    "count": map_gaps_count,
-                    "details": map_gaps[:10],
+                'map': {
+                    'threshold_s': self.map_gap_threshold,
+                    'count': map_gaps_count,
+                    'details': map_gaps[:10],
                 },
             },
         }
@@ -210,52 +225,67 @@ class Stage0MetricsRecorder(Node):
         os.makedirs(self.output_dir, exist_ok=True)
 
         # JSON report
-        json_path = os.path.join(self.output_dir, "stage0_metrics.json")
-        with open(json_path, "w") as f:
+        json_path = os.path.join(self.output_dir, 'stage0_metrics.json')
+        with open(json_path, 'w') as f:
             json.dump(report, f, indent=2)
 
         # Markdown report
-        md_path = os.path.join(self.output_dir, "stage0_metrics.md")
-        with open(md_path, "w") as f:
-            f.write(f"# Stage 0: Environment Feasibility Report\n\n")
-            f.write(f"- **Timestamp**: {report['timestamp']}\n")
-            f.write(f"- **Duration**: {report['duration_s']}s\n\n")
+        md_path = os.path.join(self.output_dir, 'stage0_metrics.md')
+        with open(md_path, 'w') as f:
+            f.write('# Stage 0: Environment Feasibility Report\n\n')
+            f.write('- **Timestamp**: %s\n' % report['timestamp'])
+            f.write('- **Duration**: %ss\n\n' % report['duration_s'])
 
-            f.write("## Topic Statistics\n\n")
-            f.write("| Topic | Messages | Mean Hz | Min Interval | Max Interval | Mean Interval |\n")
-            f.write("|-------|----------|---------|--------------|--------------|---------------|\n")
-            for key in ["clock", "scan", "map"]:
-                t = report["topics"][key]
+            f.write('## Topic Statistics\n\n')
+            f.write(
+                '| Topic | Messages | Mean Hz | '
+                'Min Interval | Max Interval | Mean Interval |\n'
+            )
+            f.write(
+                '|-------|----------|---------|'
+                '--------------|--------------|---------------|\n'
+            )
+            for key in ['clock', 'scan', 'map']:
+                t = report['topics'][key]
                 f.write(
-                    f"| {t['label']} | {t['count']} | {t['mean_hz']} | "
-                    f"{t['min_interval_s']} | {t['max_interval_s']} | {t['mean_interval_s']} |\n"
+                    '| %s | %s | %s | %s | %s | %s |\n' % (
+                        t['label'], t['count'], t['mean_hz'],
+                        t['min_interval_s'], t['max_interval_s'],
+                        t['mean_interval_s']
+                    )
                 )
 
-            f.write("\n## Gap Analysis\n\n")
-            f.write(f"| Topic | Threshold | Gap Count |\n")
-            f.write(f"|-------|-----------|----------|\n")
-            for key in ["clock", "scan", "map"]:
-                g = report["gaps"][key]
-                f.write(f"| {key} | {g['threshold_s']}s | {g['count']} |\n")
+            f.write('\n## Gap Analysis\n\n')
+            f.write('| Topic | Threshold | Gap Count |\n')
+            f.write('|-------|-----------|----------|\n')
+            for key in ['clock', 'scan', 'map']:
+                g = report['gaps'][key]
+                f.write(
+                    '| %s | %ss | %s |\n'
+                    % (key, g['threshold_s'], g['count'])
+                )
 
-            f.write(f"\n## Clock Monotonicity\n\n")
-            f.write(f"- Non-monotonic events: {report['monotonicity']['clock_non_monotonic_count']}\n")
+            f.write('\n## Clock Monotonicity\n\n')
+            f.write(
+                '- Non-monotonic events: %s\n'
+                % report['monotonicity']['clock_non_monotonic_count']
+            )
 
-        self.get_logger().info(f"JSON: {json_path}")
-        self.get_logger().info(f"Markdown: {md_path}")
+        self.get_logger().info('JSON: %s' % json_path)
+        self.get_logger().info('Markdown: %s' % md_path)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Record Stage 0 environment feasibility metrics"
+        description='Record Stage 0 environment feasibility metrics'
     )
     parser.add_argument(
-        "--duration", type=float, default=600.0,
-        help="Recording duration in seconds (default: 600 = 10 min)"
+        '--duration', type=float, default=600.0,
+        help='Recording duration in seconds (default: 600 = 10 min)'
     )
     parser.add_argument(
-        "--output-dir", type=str, default="/tmp/stage0_results",
-        help="Output directory for reports"
+        '--output-dir', type=str, default='/tmp/stage0_results',
+        help='Output directory for reports'
     )
     args = parser.parse_args()
 
@@ -271,5 +301,5 @@ def main():
         rclpy.shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

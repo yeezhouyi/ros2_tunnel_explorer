@@ -1,93 +1,81 @@
 # Copyright 2026 zhouyi
-# License: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 # Stage 0: WSL2 environment feasibility verification.
-# Launches TurtleBot3 + Gazebo Harmonic + SLAM Toolbox + Nav2 + RViz2.
+# Thin wrapper around nav2_bringup tb3_simulation_launch.py with
+# custom params and RViz config. SLAM Toolbox is enabled via slam:=True.
 #
 # Usage:
 #   ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py
-#   ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py world:=tunnel_straight
+#   ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py headless:=true rviz:=false
 
 import os
+
+from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    # ── Paths ──────────────────────────────────────────────
-    pkg_bringup = FindPackageShare("tunnel_explorer_bringup")
-    pkg_nav2_bringup = FindPackageShare("nav2_bringup")
-    pkg_tb3_sim = FindPackageShare("nav2_minimal_tb3_sim")
-    pkg_slam_toolbox = FindPackageShare("slam_toolbox")
+    pkg_bringup = get_package_share_directory('tunnel_explorer_bringup')
+    pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
+    launch_dir = os.path.join(pkg_nav2_bringup, 'launch')
 
-    # ── Arguments ──────────────────────────────────────────
-    world_arg = DeclareLaunchArgument(
-        "world", default_value="default",
-        description="TurtleBot3 simulation world name"
-    )
+    # Arguments
     rviz_arg = DeclareLaunchArgument(
-        "rviz", default_value="true",
-        description="Launch RViz2"
+        'rviz', default_value='true',
+        description='Launch RViz2 with stage0 custom config'
+    )
+    headless_arg = DeclareLaunchArgument(
+        'headless', default_value='false',
+        description='Run Gazebo headless (no GUI)'
     )
 
-    # ── Includes ───────────────────────────────────────────
-    # TB3 simulation (Gazebo + robot_state_publisher + controller)
+    # Nav2 all-in-one TB3 simulation
+    # We always disable the built-in RViz in tb3_simulation; launch our own below.
     tb3_sim = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([pkg_tb3_sim, "launch", "simulation.launch.py"])
-        ]),
-        launch_arguments={"world": LaunchConfiguration("world")}.items(),
-    )
-
-    # SLAM Toolbox (online async mapping)
-    slam = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([pkg_slam_toolbox, "launch", "online_async_launch.py"])
-        ]),
+        PythonLaunchDescriptionSource(
+            os.path.join(launch_dir, 'tb3_simulation_launch.py')
+        ),
         launch_arguments={
-            "slam_params_file": PathJoinSubstitution([
-                pkg_bringup, "config", "slam_toolbox_params.yaml"
-            ]),
-            "use_sim_time": "true",
+            'slam': 'True',
+            'params_file': os.path.join(pkg_bringup, 'config', 'nav2_params.yaml'),
+            'use_sim_time': 'True',
+            'autostart': 'True',
+            'headless': LaunchConfiguration('headless'),
+            'use_rviz': 'False',
         }.items(),
     )
 
-    # Nav2 bringup
-    nav2 = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([pkg_nav2_bringup, "launch", "navigation_launch.py"])
-        ]),
-        launch_arguments={
-            "params_file": PathJoinSubstitution([
-                pkg_bringup, "config", "nav2_params.yaml"
-            ]),
-            "use_sim_time": "true",
-        }.items(),
-    )
-
-    # ── Nodes ──────────────────────────────────────────────
+    # Custom RViz with our stage0 view
     rviz_node = Node(
-        package="rviz2",
-        executable="rviz2",
-        name="rviz2",
-        arguments=["-d", PathJoinSubstitution([
-            pkg_bringup, "rviz", "stage0_view.rviz"
-        ])],
-        condition=IfCondition(LaunchConfiguration("rviz")),
-        parameters=[{"use_sim_time": True}],
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', os.path.join(pkg_bringup, 'rviz', 'stage0_view.rviz')],
+        condition=IfCondition(LaunchConfiguration('rviz')),
+        parameters=[{'use_sim_time': True}],
     )
 
     return LaunchDescription([
-        world_arg,
         rviz_arg,
+        headless_arg,
         tb3_sim,
-        slam,
-        nav2,
         rviz_node,
     ])
