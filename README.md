@@ -4,11 +4,13 @@
 
 ## Status
 
-**Stage 0** — WSL2 environment feasibility verification.  
-The base simulation stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox) is being validated.
+- Stage 0A (Environment Stability): **PASS**
+- Stage 0B (Navigation Functionality): PENDING (simulation-run required)
+- Stage 1 (Frontier-Based Exploration): **1A/1B implemented, 1C pending simulation integration**
 
-- Stage 0A (Environment Stability): PASS
-- Stage 0B (Navigation Functionality): PENDING
+The base simulation stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox)
+is validated. See [Environment Feasibility](docs/environment_feasibility.md) for
+Stage 0 details.
 
 ## Prerequisites
 
@@ -31,7 +33,7 @@ sudo apt-get install -y \
 
 ```bash
 cd ~/ros2_ws
-colcon build --packages-select tunnel_explorer_bringup benchmark_tools
+colcon build --packages-select tunnel_explorer_bringup benchmark_tools tunnel_frontier_explorer
 source install/setup.bash
 ```
 
@@ -93,13 +95,76 @@ cat /tmp/stage0b_results/stage0b_results.json
 cat /tmp/stage0b_results/stage0b_results.md
 ```
 
+## Quick Start (Stage 1: Frontier-Based Exploration)
+
+Stage 1 uses `tunnel_frontier_explorer` (C++) to detect frontier clusters from
+the `/map` occupancy grid and send nearest-frontier goals to Nav2.
+
+> **Note**: Stage 1C (simulation integration) requires Stage 0B navigation
+> validation first. Run Stage 0B before debugging frontier explorer failures.
+
+### Prerequisites
+
+- Stage 0 simulation stack running (Gazebo + SLAM Toolbox + Nav2)
+- Map partially built (SLAM has published at least one map)
+
+### Launch frontier explorer
+
+In a separate terminal while the simulation is running:
+
+```bash
+ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py
+```
+
+The node will:
+1. Wait for a map from SLAM Toolbox
+2. Wait for the Nav2 `/navigate_to_pose` action server
+3. Detect frontier clusters (free cells adjacent to unknown space)
+4. Select the nearest non-blacklisted frontier
+5. Send a `NavigateToPose` goal using the cluster's representative cell
+6. On failure, blacklist the goal with a configurable radius and timeout
+7. Publish RViz markers on `~/frontier_markers`
+
+### RViz visualization
+
+Add a MarkerArray display in RViz subscribed to `/frontier_markers`:
+
+| Namespace | Color | Shape | Description |
+|-----------|-------|-------|-------------|
+| `frontier_clusters` | Green | Points | Centroids of all detected frontier clusters |
+| `selected_goal` | Red | Sphere | Currently selected navigation goal |
+| `blacklisted` | Grey | Sphere | Temporarily forbidden failed goals |
+
+### Parameters
+
+All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `exploration_period_seconds` | 1.0 | Main loop interval (Hz) |
+| `min_cluster_size` | 10 | Minimum cells for a frontier cluster |
+| `frontier_neighbor_connectivity` | 4 | Neighbourhood for frontier detection |
+| `cluster_connectivity` | 8 | Neighbourhood for BFS clustering |
+| `blacklist_radius_meters` | 0.5 | Radius to blacklist failed goals |
+| `blacklist_timeout_seconds` | 60.0 | Blacklist expiry time |
+| `orient_goal_toward_frontier` | true | Face the robot toward the goal |
+
+### Architecture
+
+- `FrontierDetector`: Pure C++ class (no ROS deps) for BFS frontier detection,
+  clustering, centroid computation, and representative-cell selection.
+- `FrontierBlacklist`: Pure C++ class (no ROS deps) for radius + timeout-based
+  goal blacklisting with injectable clocks for deterministic testing.
+- `TunnelFrontierExplorerNode`: ROS2 node with 6-state machine
+  (WAITING_FOR_MAP → WAITING_FOR_NAV2 → IDLE → NAVIGATING → COOLDOWN → COMPLETED).
+
 ## Packages
 
 | Package | Language | Description |
 |---------|----------|-------------|
 | `tunnel_explorer_bringup` | Python/YAML | Launch files, configs, RViz views |
 | `benchmark_tools` | Python | Metrics recording, analysis, plotting |
-| `tunnel_frontier_explorer` | C++ | Frontier-based autonomous exploration (Stage 2) |
+| `tunnel_frontier_explorer` | C++ | Frontier-based autonomous exploration (Stage 1, nearest-frontier baseline) |
 | `tunnel_centerline_extractor` | C++ | Tunnel centerline distance field extraction (Stage 4) |
 | `tunnel_aware_planner` | C++ | Tunnel-aware global planner plugin for Nav2 (Stage 5) |
 | `tunnel_worlds` | Python/SDF | Parametric tunnel world generator (Stage 3) |
