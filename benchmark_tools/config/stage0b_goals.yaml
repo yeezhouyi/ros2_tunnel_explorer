@@ -1,20 +1,19 @@
 # Stage 0B Navigation Smoke Test Goals
 #
-# These are EXAMPLE goal poses for a TurtleBot3 in the nav2_minimal_tb3_sim
-# sandbox world. Coordinates MUST be adjusted to match your current map.
+# Counterclockwise rectangle: the robot traces a rectangular path around
+# the 8m x 8m sandbox world, making only 90° left turns.
+# Each forward step is 1m, well within the laser range (~4.5m).
 #
-# Before running the smoke test:
-#   1. Launch the simulation and let SLAM build a map.
-#   2. Note the coordinate range visible in RViz.
-#   3. Update the x/y/yaw values below to reachable positions on your map.
-#   4. Keep goals simple: straight-line, no sharp turns, clear of obstacles.
-#
-# Default sandbox world is roughly 8m x 8m open arena.
-# The robot starts near (0.0, 0.0) facing +X.
+# Usage:
+#   ros2 run benchmark_tools run_navigation_smoke_test.py \
+#     --goals benchmark_tools/config/stage0b_goals.yaml
 
 goals:
-  - description: "Forward 1m"
+  # ── Segment 1: East (3 goals) ─────────────────────────────────────────
+  - name: "east_1m"
+    description: "East 1m"
     frame_id: "map"
+    yaw_deg: 0
     position:
       x: 1.0
       y: 0.0
@@ -25,8 +24,10 @@ goals:
       z: 0.0
       w: 1.0
 
-  - description: "Forward 2m"
+  - name: "east_2m"
+    description: "East 2m"
     frame_id: "map"
+    yaw_deg: 0
     position:
       x: 2.0
       y: 0.0
@@ -37,11 +38,28 @@ goals:
       z: 0.0
       w: 1.0
 
-  - description: "Left turn 90deg"
+  - name: "east_3m"
+    description: "East 3m"
     frame_id: "map"
+    yaw_deg: 0
     position:
-      x: 2.0
-      y: 1.5
+      x: 3.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  # ── Segment 2: North (2 goals) ────────────────────────────────────────
+  - name: "north_1m"
+    description: "North 1m"
+    frame_id: "map"
+    yaw_deg: 90
+    position:
+      x: 3.0
+      y: 1.0
       z: 0.0
     orientation:
       x: 0.0
@@ -49,59 +67,71 @@ goals:
       z: 0.707
       w: 0.707
 
-  - description: "Left turn further"
+  - name: "north_2m"
+    description: "North 2m"
     frame_id: "map"
+    yaw_deg: 90
     position:
-      x: 1.0
-      y: 2.5
-      z: 0.0
-    orientation:
-      x: 0.0
-      y: 0.0
-      z: 0.707
-      w: 0.707
-
-  - description: "Right turn 180deg (turn around)"
-    frame_id: "map"
-    position:
-      x: -1.0
+      x: 3.0
       y: 2.0
       z: 0.0
     orientation:
       x: 0.0
       y: 0.0
-      z: 0.0
-      w: 1.0
-
-  - description: "Diagonal return"
-    frame_id: "map"
-    position:
-      x: -1.5
-      y: 0.5
-      z: 0.0
-    orientation:
-      x: 0.0
-      y: 0.0
       z: 0.707
       w: 0.707
 
-  - description: "Near obstacle (adjust to known obstacle location)"
+  # ── Segment 3: West (3 goals) ─────────────────────────────────────────
+  - name: "west_1m"
+    description: "West 1m"
     frame_id: "map"
+    yaw_deg: 180
     position:
-      x: 0.5
-      y: -1.0
+      x: 2.0
+      y: 2.0
       z: 0.0
     orientation:
       x: 0.0
       y: 0.0
-      z: 0.0
-      w: 1.0
+      z: 1.0
+      w: 0.0
 
-  - description: "Far corner"
+  - name: "west_2m"
+    description: "West 2m"
     frame_id: "map"
+    yaw_deg: 180
     position:
-      x: 3.0
-      y: 2.5
+      x: 1.0
+      y: 2.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 1.0
+      w: 0.0
+
+  - name: "west_3m"
+    description: "West 3m"
+    frame_id: "map"
+    yaw_deg: 180
+    position:
+      x: 0.0
+      y: 2.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 1.0
+      w: 0.0
+
+  # ── Segment 4: South (2 goals) ────────────────────────────────────────
+  - name: "south_1m"
+    description: "South 1m"
+    frame_id: "map"
+    yaw_deg: -90
+    position:
+      x: 0.0
+      y: 1.0
       z: 0.0
     orientation:
       x: 0.0
@@ -109,20 +139,10 @@ goals:
       z: -0.707
       w: 0.707
 
-  - description: "Left wall approach"
+  - name: "finish"
+    description: "Finish at origin"
     frame_id: "map"
-    position:
-      x: 2.5
-      y: -1.5
-      z: 0.0
-    orientation:
-      x: 0.0
-      y: 0.0
-      z: 0.0
-      w: 1.0
-
-  - description: "Return to start vicinity"
-    frame_id: "map"
+    yaw_deg: 0
     position:
       x: 0.0
       y: 0.0
