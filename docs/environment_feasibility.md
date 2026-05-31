@@ -78,7 +78,18 @@ cat /tmp/stage0_results/stage0_metrics.md
 
 ---
 
-## Stage 0B: Navigation Functional Verification
+## Stage 0B-1: Known Free Space Navigation Verification
+
+Verify that the Nav2 navigation stack (NavFn + DWB) can execute simple
+NavigateToPose goals within areas already observed by SLAM.
+
+### Background
+
+Stage 0B-1 is split from the original Stage 0B after Attempt 1 revealed
+that the DWB controller cannot find valid trajectories when goals require
+turning into unknown (unobserved) space. This is expected behaviour: the
+online-SLAM navigation handover is the responsibility of the Frontier
+Explorer (Stage 1C).
 
 ### Acceptance Criteria
 
@@ -87,30 +98,27 @@ cat /tmp/stage0_results/stage0_metrics.md
 | N1 | NavigateToPose success rate | >= 90 % | `run_navigation_smoke_test.py` — `summary.success_rate` |
 | N2 | No sustained TF timeout during navigation | No continuous TF warnings in log | Manual log inspection |
 | N3 | No sustained costmap timeout during navigation | No continuous costmap warnings in log | Manual log inspection |
-| N4 | Motion `/scan` steady-state frequency | >= 4.5 Hz | Simultaneous `record_stage0_metrics.py` run |
-| N5 | Motion steady-state RTF | >= 0.8 | Simultaneous `record_stage0_metrics.py` run |
 
 ### Procedure
 
 1. Complete Stage 0A first (simulation running with SLAM and Nav2 active).
-2. Run the automated smoke test:
+2. Verify goal coordinates are within known-free costmap cells (see RViz
+   diagnosis below).
+3. Run the automated smoke test:
 
 ```bash
 # Terminal 3 (while simulation is running):
 ros2 run benchmark_tools run_navigation_smoke_test.py \
-    --goals src/benchmark_tools/config/stage0b_goals.yaml \
+    --goals config/stage0b_known_free_goals.yaml \
+    --goal-timeout-seconds 30 \
+    --continue-on-failure true \
+    --cooldown-seconds 1.0 \
     --output-dir /tmp/stage0b_results
 ```
 
-3. Alternatively, send goals interactively via RViz `2D Goal Pose`.
-
-The smoke test sends up to 10 goals from a YAML config file sequentially,
-waiting for each to complete before sending the next. Results are written
-as JSON and Markdown reports.
-
-**Important**: The example goal coordinates in `stage0b_goals.yaml` are for the
-`nav2_minimal_tb3_sim` sandbox world. Adjust them to match your actual SLAM map
-before running.
+The smoke test sends goals from a YAML config file sequentially. Each goal
+has its own timeout; if it expires the goal is cancelled and the next one
+starts after a cooldown. Results are written as JSON and Markdown reports.
 
 ### Review Results
 
@@ -119,16 +127,71 @@ cat /tmp/stage0b_results/stage0b_results.json
 cat /tmp/stage0b_results/stage0b_results.md
 ```
 
+### RViz Diagnosis (Before Running)
+
+Before running the smoke test, visually check the local costmap at the
+turn point to ensure goal coordinates are in free space:
+
+1. Add these displays in RViz:
+   - **Map**: `/local_costmap/costmap` (or `/local_costmap/costmap_raw`)
+   - **Map**: `/global_costmap/costmap` (or `/global_costmap/costmap_raw`)
+   - **Polygon**: `/local_costmap/published_footprint`
+
+2. Find actual topic names if the defaults differ:
+   ```bash
+   ros2 topic list | grep costmap
+   ros2 topic list | grep footprint
+   ```
+
+3. Colour legend for costmap cells:
+   - **Gray**: Unknown (unobserved) — goals should not be placed here
+   - **Green/White**: Free space — goals should be placed here
+   - **Red**: Lethal obstacle / inflation layer — keep distance
+
+4. If a goal is rejected by the DWB controller, check whether the
+   turn point costmap shows unknown, lethal, or inflated cells blocking
+   the trajectory.
+
+## Stage 0B-2: Online SLAM and Frontier Explorer Handover Verification
+
+Verify that the Frontier Explorer (Stage 1C) correctly generates
+navigation goals at the boundary of known free space, using the
+`representative_cell` mechanism to avoid sending goals into unknown area.
+
+### Acceptance Criteria
+
+| # | Criterion | Threshold |
+|---|-----------|-----------|
+| F1 | Frontier Explorer starts and builds a map | Map expands beyond initial area |
+| F2 | Frontier navigates to at least 3 frontiers | 3 consecutive successful navigations |
+| F3 | No navigation goal sent to unknown/lethal costmap cell | All goals fall on known free cells |
+
+### Procedure
+
+```bash
+# Terminal 1: Launch simulation
+ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py headless:=True
+
+# Terminal 2: Launch Frontier Explorer
+ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py
+
+# Terminal 3: Monitor frontiers
+ros2 topic echo /tunnel_frontier_explorer/frontier_markers
+```
+
 ---
 
 ## Outcome Decision
 
 | Result | Action |
 |--------|--------|
-| Stage 0A PASS, Stage 0B PASS | Proceed to Stage 1 with WSL2 |
-| Stage 0A PASS, Stage 0B marginal (>= 7/10) | Proceed with documented caveats |
-| Stage 0A PASS, Stage 0B < 7/10 | Debug Nav2 configuration, re-run 0B |
+| Stage 0A PASS, Stage 0B-1 PASS | Proceed to Stage 1C (Frontier Explorer) with WSL2 |
+| Stage 0A PASS, Stage 0B-1 FAIL (but known-free goals work) | Debug Frontier Explorer Node configuration |
+| Stage 0A PASS, Stage 0B-1 FAIL (known-free goals also fail) | Debug Nav2 base configuration, re-run 0B-1 |
 | Stage 0A H-criterion fails | Switch to native Ubuntu 24.04 |
+
+Stage 0B-2 (Online SLAM and Frontier Explorer handover) is evaluated
+during Stage 1C simulation integration, not as a standalone test.
 
 ## Fallback: Native Ubuntu 24.04
 
