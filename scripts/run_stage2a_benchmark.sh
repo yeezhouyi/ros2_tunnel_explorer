@@ -522,7 +522,7 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
   # Determine run status (priority: COMPLETED > CRASHED > STALLED > TIMEOUT)
   if [ "${RUN_STATUS}" = "STARTUP_FAILED" ]; then
     :  # already set
-  elif [ "${COMPLETION_DETECTED}" = "true" ]; then
+  elif [ "${STABLE_COMPLETION_DETECTED}" = "true" ]; then
     RUN_STATUS="COMPLETED"
   elif ${EXPLORER_CRASHED}; then
     RUN_STATUS="CRASHED"
@@ -705,7 +705,7 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
 | Goals succeeded | ${SUCCESS_LINES:-0} |
 | Goals timed out | ${TIMEOUT_LINES:-0} |
 | Goals aborted | ${ABORTED_LINES:-0} |
-| Goal reachability rate | ${REACH_RATE:-0.0}% |
+| Navigation goal success rate | ${REACH_RATE:-0.0}% |
 | Unique goal bins (${BIN_SIZE} m grid) | ${UNIQUE_BINS:-0} |
 | Repeated goals | ${REPEATED_GOALS:-0} |
 | Revisit rate | ${REVISIT_RATE:-0.0}% |
@@ -757,6 +757,8 @@ import json
 data = {
     'run_status': '${RUN_STATUS:-TIMEOUT}',
     'stable_completion_detected': $( [ "${STABLE_COMPLETION_DETECTED:-false}" = "true" ] && echo True || echo False ),
+    'completion_candidate_detected': $( [ "${COMPLETION_DETECTED:-false}" = "true" ] && echo True || echo False ),
+    'completion_candidate_time_seconds': ${COMPLETION_AT_SEC:-0},
     'completion_time_seconds': ${COMPLETION_AT_SEC:-0},
     'completion_candidate_epoch': ${COMPLETION_CANDIDATE_EPOCH:-0},
     'completion_reset_count': ${COMPLETION_RESET_COUNT:-0},
@@ -773,7 +775,7 @@ data = {
     'goals_aborted': ${ABORTED_LINES:-0},
     'unique_goal_bins': ${UNIQUE_BINS:-0},
     'revisit_rate': ${REVISIT_RATE:-0.0},
-    'reachability_rate': ${REACH_RATE:-0.0}
+    'navigation_goal_success_rate': ${REACH_RATE:-0.0}
 }
 with open('${JSON_FILE}', 'w') as f:
     json.dump(data, f, indent=2)
@@ -807,7 +809,7 @@ JSONPYEOF
     echo " Status:           ${RUN_STATUS}"
     echo " Goals:            ${GOAL_LINES:-0} total, ${SUCCESS_LINES:-0} succeeded, ${UNIQUE_BINS:-0} unique bins"
     echo " Revisit rate:     ${REVISIT_RATE:-0.0}%"
-    echo " Reachability:     ${REACH_RATE:-0.0}%"
+    echo " Navigation goal success rate:     ${REACH_RATE:-0.0}%"
     echo " Completion time: ${COMPLETION_AT_SEC} s (detected: ${COMPLETION_DETECTED})"
     echo " Filter activations: ${FILTER_COUNT:-0}"
     echo " Startup attempts: ${STARTUP_ATTEMPTS}"

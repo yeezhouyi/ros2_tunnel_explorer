@@ -105,7 +105,7 @@ for run_dir in run_dirs:
     elif status == "TIMEOUT":
         algorithm_timeout.append((run_id, best_data))
     elif status == "COMPLETED" and not stable:
-        algorithm_excluded.append((run_id, "NOT_STABLE", best_data))
+        algorithm_timeout.append((run_id, best_data))
     else:
         infra_excluded.append((run_id, status, best_data))
 
@@ -128,9 +128,11 @@ def compute_stats(values):
     }
 
 
-def g(d, key, default=0):
-    """Safely get a numeric field."""
+def g(d, key, default=0, fallback=None):
+    """Safely get a numeric field, with optional fallback key."""
     v = d.get(key)
+    if v is None and fallback is not None:
+        v = d.get(fallback)
     if v is None:
         return default
     return v
@@ -141,7 +143,7 @@ comp_g    = [g(r[1], "goals_dispatched") for r in algorithm_completed]
 comp_s    = [g(r[1], "goals_succeeded") for r in algorithm_completed]
 comp_u    = [g(r[1], "unique_goal_bins") for r in algorithm_completed]
 comp_rv   = [g(r[1], "revisit_rate", 0) for r in algorithm_completed]
-comp_rch  = [g(r[1], "reachability_rate", 0) for r in algorithm_completed]
+comp_rch  = [g(r[1], "navigation_goal_success_rate", 0, "reachability_rate") for r in algorithm_completed]
 
 # ── Build output ─────────────────────────────────────────────────────────
 
@@ -154,7 +156,7 @@ for run_id, d in algorithm_completed:
         "goals_succeeded": g(d, "goals_succeeded"),
         "unique_goal_bins": g(d, "unique_goal_bins"),
         "revisit_rate": g(d, "revisit_rate", 0),
-        "reachability_rate": g(d, "reachability_rate", 0),
+        "navigation_goal_success_rate": g(d, "navigation_goal_success_rate", 0, "reachability_rate"),
         "completion_time_seconds": g(d, "completion_time_seconds", 0),
     })
 
@@ -162,11 +164,12 @@ timeout_table = []
 for run_id, d in algorithm_timeout:
     timeout_table.append({
         "run_id": run_id,
+        "status": "TIMEOUT",
         "goals_dispatched": g(d, "goals_dispatched"),
         "goals_succeeded": g(d, "goals_succeeded"),
         "unique_goal_bins": g(d, "unique_goal_bins"),
         "revisit_rate": g(d, "revisit_rate", 0),
-        "reachability_rate": g(d, "reachability_rate", 0),
+        "navigation_goal_success_rate": g(d, "navigation_goal_success_rate", 0, "reachability_rate"),
     })
 
 excluded_table = []
@@ -208,7 +211,7 @@ result = {
         "goals_succeeded": compute_stats(comp_s),
         "unique_goal_bins": compute_stats(comp_u),
         "revisit_rate": compute_stats(comp_rv),
-        "reachability_rate": compute_stats(comp_rch),
+        "navigation_goal_success_rate": compute_stats(comp_rch),
     },
 }
 
@@ -308,7 +311,7 @@ OUTPUT="${RESULTS_DIR}/aggregated_results.md"
   # ─────── Algorithm Outcomes ─────────────────────────────────────────────
   echo "## Algorithm Outcomes"
   echo ""
-  md_row "Run ID" "Status" "Goals" "Succeeded" "Unique" "Revisit %" "Reach %" "Completion (s)"
+  md_row "Run ID" "Status" "Goals" "Succeeded" "Unique" "Revisit %" "Nav Succ %" "Completion (s)"
   md_row "---" "---" "---" "---" "---" "---" "---" "---"
 
   # Completed rows
@@ -317,17 +320,18 @@ OUTPUT="${RESULTS_DIR}/aggregated_results.md"
 import json, sys
 rows = json.load(sys.stdin)
 for r in rows:
-    print(f\"| {r['run_id']} | {r['status']} | {r['goals_dispatched']} | {r['goals_succeeded']} | {r['unique_goal_bins']} | {r['revisit_rate']} | {r['reachability_rate']} | {r['completion_time_seconds']} |\")
+    print(f\"| {r['run_id']} | {r['status']} | {r['goals_dispatched']} | {r['goals_succeeded']} | {r['unique_goal_bins']} | {r['revisit_rate']} | {r['navigation_goal_success_rate']} | {r['completion_time_seconds']} |\")
 " 2>/dev/null
 
-  # Timeout rows (only when --allow-timeout)
-  if [ "${ALLOW_TIMEOUT}" = "true" ]; then
-    TIMEOUT_JSON=$(get_table_json "timeout_table")
+  # Timeout rows (always shown — TIMEOUT is a valid algorithm outcome)
+  TIMEOUT_JSON=$(get_table_json "timeout_table")
+  TIMEOUT_COUNT=$(echo "${TIMEOUT_JSON}" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+  if [ "${TIMEOUT_COUNT}" -gt 0 ]; then
     echo "${TIMEOUT_JSON}" | python3 -c "
 import json, sys
 rows = json.load(sys.stdin)
 for r in rows:
-    print(f\"| {r['run_id']} | TIMEOUT | {r['goals_dispatched']} | {r['goals_succeeded']} | {r['unique_goal_bins']} | {r['revisit_rate']} | {r['reachability_rate']} | N/A |\")
+    print(f\"| {r['run_id']} | {r['status']} | {r['goals_dispatched']} | {r['goals_succeeded']} | {r['unique_goal_bins']} | {r['revisit_rate']} | {r['navigation_goal_success_rate']} | N/A |\")
 " 2>/dev/null
   fi
   echo ""
@@ -352,7 +356,7 @@ for r in rows:
     "goals_succeeded:Goals succeeded" \
     "unique_goal_bins:Unique goal bins" \
     "revisit_rate:Revisit rate (%)" \
-    "reachability_rate:Reachability rate (%)"
+    "navigation_goal_success_rate:Navigation goal success rate (%)"
   do
     KEY="${entry%%:*}"
     LABEL="${entry#*:}"
