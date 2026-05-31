@@ -25,7 +25,11 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -46,6 +50,10 @@ def generate_launch_description():
         'headless', default_value='False',
         description='Run Gazebo headless (no GUI)'
     )
+    use_composition_arg = DeclareLaunchArgument(
+        'use_composition', default_value='False',
+        description='Use composable nodes (default False for WSL2 DDS reliability)'
+    )
 
     # Nav2 all-in-one TB3 simulation
     # We always disable the built-in RViz in tb3_simulation; launch our own below.
@@ -60,6 +68,7 @@ def generate_launch_description():
             'autostart': 'True',
             'headless': LaunchConfiguration('headless'),
             'use_rviz': 'False',
+            'use_composition': LaunchConfiguration('use_composition'),
         }.items(),
     )
 
@@ -73,9 +82,18 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],
     )
 
+    fastdds_env = SetEnvironmentVariable(
+        'FASTRTPS_DEFAULT_PROFILES_FILE',
+        os.path.join(
+            pkg_bringup, 'config', 'fastdds_udp_only.xml'
+        ),
+    )
+
     return LaunchDescription([
+        fastdds_env,
         rviz_arg,
         headless_arg,
+        use_composition_arg,
         tb3_sim,
         rviz_node,
     ])

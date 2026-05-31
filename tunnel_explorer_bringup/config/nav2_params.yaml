@@ -311,7 +311,7 @@ collision_monitor:
       min_points: 4
       visualize: true
       polygon_pub_topic: "polygon_stop"
-      enabled: true
+      enabled: false
     observation_sources: ["scan"]
     scan:
       type: "scan"
