@@ -1,0 +1,192 @@
+# Stage 0B-1: Known Free Space Navigation Test Goals
+#
+# This goals file is designed to verify the Nav2 navigation stack within
+# areas that have already been observed by SLAM. Goals use progressive,
+# shallow turns rather than single 90° sharp turns, to isolate DWB
+# controller validation from exploration-boundary issues.
+#
+# IMPORTANT CAVEATS:
+# - Coordinates MUST be verified in RViz before running. Adjust them
+#   so that every goal falls within known-free costmap cells.
+# - Do NOT place goals in unknown (unobserved) areas — that is the
+#   responsibility of the Frontier Explorer in Stage 1C.
+# - Do NOT place goals so close to walls that inflation-layer cost
+#   interferes with trajectory evaluation.
+# - This test validates the Nav2 base navigation pipeline only. It does
+#   NOT reflect frontier exploration performance.
+#
+# Usage:
+#   ros2 run benchmark_tools run_navigation_smoke_test.py \
+#     --goals benchmark_tools/config/stage0b_known_free_goals.yaml \
+#     --goal-timeout-seconds 30 \
+#     --continue-on-failure true
+#
+# Design principle:
+#   Each leg extends the robot's known area gradually, with turning
+#   waypoints that keep the robot well inside the already-observed
+#   region. The path traces an L-shaped corridor:
+#     origin → east 3m → north 1.5m → west 3m → south back to origin
+#   with intermediate waypoints at reduced yaw increments.
+
+goals:
+  # ── Segment 1: East (3 goals, 0° yaw) ──────────────────────────────
+  # Straight line along +x, well within initial laser view.
+  - name: "east_1m"
+    description: "East 1m"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 1.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - name: "east_2m"
+    description: "East 2m"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 2.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - name: "east_3m"
+    description: "East 3m"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 3.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  # ── Segment 2: Progressive north-east turn (3 goals) ───────────────
+  # Shallow heading changes: ~18° then ~34° instead of a single 90°.
+  # The robot rotates gradually so the DWB controller always has
+  # forward-viable trajectories through known-free space.
+  - name: "north_east_shallow"
+    description: "North-east shallow (3.3, 0.3)"
+    frame_id: "map"
+    yaw_deg: 18
+    position:
+      x: 3.3
+      y: 0.3
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.156
+      w: 0.988
+
+  - name: "north_east_medium"
+    description: "North-east medium (3.4, 0.7)"
+    frame_id: "map"
+    yaw_deg: 34
+    position:
+      x: 3.4
+      y: 0.7
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.292
+      w: 0.956
+
+  - name: "north_1_5m"
+    description: "North 1.5m (3.3, 1.2)"
+    frame_id: "map"
+    yaw_deg: 65
+    position:
+      x: 3.3
+      y: 1.2
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.559
+      w: 0.829
+
+  # ── Segment 3: West with gradual turn (3 goals) ────────────────────
+  - name: "west_shallow"
+    description: "West shallow (2.7, 1.4)"
+    frame_id: "map"
+    yaw_deg: 110
+    position:
+      x: 2.7
+      y: 1.4
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.940
+      w: -0.342
+
+  - name: "west_medium"
+    description: "West medium (2.0, 1.5)"
+    frame_id: "map"
+    yaw_deg: 170
+    position:
+      x: 2.0
+      y: 1.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.996
+      w: -0.087
+
+  - name: "west_3m"
+    description: "West 3m (0.5, 1.5)"
+    frame_id: "map"
+    yaw_deg: 180
+    position:
+      x: 1.0
+      y: 1.5
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 1.0
+      w: 0.0
+
+  # ── Segment 4: Return south (2 goals) ──────────────────────────────
+  - name: "south_shallow"
+    description: "South return (0.5, 0.8)"
+    frame_id: "map"
+    yaw_deg: -80
+    position:
+      x: 0.5
+      y: 0.8
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: -0.643
+      w: 0.766
+
+  - name: "finish"
+    description: "Finish at origin"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 0.2
+      y: 0.2
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
