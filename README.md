@@ -5,11 +5,11 @@
 ## Status
 
 - Stage 0A (Environment Stability): **PASS**
-- Stage 0B-1 (Known-Free Navigation): **FAIL** — DWB turn diagnosis in progress
-- Stage 0B-D (DWB Turn Failure Diagnosis): **IN PROGRESS**
+- Stage 0B-1 (Known-Free Navigation): **PASS** — RotationShimController + DWB, 60s timeout, 10/11 = 90.9%
+- Stage 0B-D (DWB Turn Failure Diagnosis): **COMPLETE** — root cause is DWB path-tracking at heading changes
 - Stage 1A (Frontier Algorithms): **PASS**
 - Stage 1B (ROS2 Node Build): **PASS**
-- Stage 1C (Simulation Integration): **BLOCKED** — requires Stage 0B pass
+- Stage 1C (Simulation Integration): **READY** — smoke test in progress
 
 The base simulation stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox)
 is validated. See [Environment Feasibility](docs/environment_feasibility.md) for
@@ -145,6 +145,8 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `exploration_period_seconds` | 1.0 | Main loop interval (Hz) |
+| `cooldown_seconds` | 5.0 | Pause between navigation goals |
+| `goal_timeout_seconds` | 60.0 | Single-goal timeout before cancel + blacklist |
 | `min_cluster_size` | 10 | Minimum cells for a frontier cluster |
 | `frontier_neighbor_connectivity` | 4 | Neighbourhood for frontier detection |
 | `cluster_connectivity` | 8 | Neighbourhood for BFS clustering |
