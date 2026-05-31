@@ -115,6 +115,10 @@ private:
   std::optional<nav_msgs::msg::OccupancyGrid> latest_map_;
   rclcpp::Time cooldown_start_;
   std::optional<Point2D> current_goal_;
+
+  // Consecutive empty frontier cycles before entering COMPLETED.
+  std::size_t frontier_empty_count_ = 0;
+  static constexpr std::size_t k_max_empty_cycles_ = 10;
 };
 
 }  // namespace tunnel_frontier_explorer

@@ -14,8 +14,8 @@ __pycache__/
 .vscode/
 .idea/
 
-# Claude Code (local config only)
-.claude/settings.local.json
+# Claude Code (session state, local config, plans)
+.claude/
 
 # OS
 .DS_Store

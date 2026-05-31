@@ -18,7 +18,7 @@
 #
 # Usage:
 #   ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py
-#   ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py headless:=true rviz:=false
+#   ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py headless:=True rviz:=False
 
 import os
 

@@ -114,6 +114,11 @@ void TunnelFrontierExplorerNode::mapCallback(
     RCLCPP_INFO(get_logger(), "First map received (%ux%u, res=%.3f)",
                 msg->info.width, msg->info.height, msg->info.resolution);
     transitionTo(ExplorationState::WAITING_FOR_NAV2);
+  } else if (state_ == ExplorationState::COMPLETED) {
+    // New map data may reveal new frontiers — re-evaluate.
+    RCLCPP_INFO(get_logger(), "New map received while COMPLETED — re-evaluating");
+    frontier_empty_count_ = 0;
+    transitionTo(ExplorationState::IDLE);
   }
 }
 
@@ -183,8 +188,8 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         std::vector<FrontierCluster> valid;
         std::vector<Point2D> blacklisted_positions;
         for (const auto & c : clusters) {
-          if (blacklist_.contains(c.centroid_world, now)) {
-            blacklisted_positions.push_back(c.centroid_world);
+          if (blacklist_.contains(c.representative_world, now)) {
+            blacklisted_positions.push_back(c.representative_world);
           } else {
             valid.push_back(c);
           }
@@ -203,14 +208,22 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
             "All %zu frontiers blacklisted — waiting for expiry",
             clusters.size());
+            frontier_empty_count_ = 0;
           } else {
-            RCLCPP_INFO(get_logger(),
-            "No frontiers — exploration complete");
-            transitionTo(ExplorationState::COMPLETED);
+            ++frontier_empty_count_;
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+            "No frontiers (%zu/%zu empty cycles)",
+            frontier_empty_count_, k_max_empty_cycles_);
+            if (frontier_empty_count_ >= k_max_empty_cycles_) {
+              RCLCPP_INFO(get_logger(), "No frontiers for %zu cycles — "
+                          "exploration complete", k_max_empty_cycles_);
+              transitionTo(ExplorationState::COMPLETED);
+            }
           }
           publishMarkers(clusters, blacklisted_positions, std::nullopt);
           return;
         }
+        frontier_empty_count_ = 0;
 
       // Pick nearest valid frontier.
         const auto & target = valid.front();

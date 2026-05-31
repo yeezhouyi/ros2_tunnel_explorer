@@ -44,6 +44,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from action_msgs.msg import GoalStatus
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 
@@ -52,6 +53,7 @@ try:
 except ImportError:
     yaml = None
 
+from benchmark_tools.path_util import resolve_goals_path
 from benchmark_tools.stats import compute_navigation_summary
 
 
@@ -139,7 +141,7 @@ class NavigationSmokeTest(Node):
         """Periodic check: timeout during NAVIGATING, cooldown expiry."""
         if self._state == 'NAVIGATING' and self._goal_handle is not None:
             elapsed = time.time() - (self._goal_start_time or time.time())
-            if elapsed > self._goal_timeout:
+            if elapsed > self._goal_timeout and not self._canceled_by_timeout:
                 self.get_logger().info(
                     '  Goal timeout (%.1fs > %.1fs), cancelling...'
                     % (elapsed, self._goal_timeout)
@@ -208,25 +210,28 @@ class NavigationSmokeTest(Node):
         if self._canceled_by_timeout:
             status = 'TIMED_OUT'
             self._canceled_by_timeout = False
+            error_code = None
             error_msg = 'Goal timed out after %.1fs' % elapsed
         else:
             status = _status_label(result.status)
-            error_msg = None
-            if status == 'ABORTED':
-                error_msg = getattr(result.result, 'result', None)
-                if error_msg is not None:
-                    error_msg = str(error_msg)
+            error_code = getattr(result.result, 'error_code', None) if result.result else None
+            error_msg = getattr(result.result, 'error_msg', None) if result.result else None
+            if status == 'ABORTED' and not error_msg:
+                if error_code is not None:
+                    error_msg = 'ABORTED (error_code=%s)' % error_code
                 else:
                     error_msg = 'ABORTED (no detail)'
 
-        self._finish_goal(status, duration_s=elapsed, error_msg=error_msg)
+        self._finish_goal(status, duration_s=elapsed,
+                          error_code=error_code, error_msg=error_msg)
 
     def _feedback_cb(self, feedback_msg):
         pass
 
-    def _finish_goal(self, status, duration_s=0.0, error_msg=None):
+    def _finish_goal(self, status, duration_s=0.0, error_code=None, error_msg=None):
         """Record result for the current goal and transition state."""
-        self._record_result(status, duration_s=duration_s, error_msg=error_msg)
+        self._record_result(status, duration_s=duration_s,
+                            error_code=error_code, error_msg=error_msg)
         self._current_goal_index += 1
 
         if self._current_goal_index >= len(self.goals):
@@ -250,6 +255,7 @@ class NavigationSmokeTest(Node):
                     },
                     'status': 'SKIPPED',
                     'duration_s': 0.0,
+                    'error_code': None,
                     'error_msg': None,
                 })
                 self._current_goal_index += 1
@@ -262,7 +268,7 @@ class NavigationSmokeTest(Node):
         self._state = 'COOLDOWN'
         self._cooldown_until = time.time() + self._cooldown
 
-    def _record_result(self, status, duration_s=0.0, error_msg=None):
+    def _record_result(self, status, duration_s=0.0, error_code=None, error_msg=None):
         goal_def = self.goals[self._current_goal_index]
         self.results.append({
             'index': self._current_goal_index,
@@ -274,6 +280,7 @@ class NavigationSmokeTest(Node):
             },
             'status': status,
             'duration_s': round(duration_s, 1),
+            'error_code': error_code,
             'error_msg': error_msg,
         })
         self.get_logger().info(
@@ -335,13 +342,14 @@ class NavigationSmokeTest(Node):
                      % s['mean_duration_s'])
 
             f.write('## Per-Goal Results\n\n')
-            f.write('| # | Description | Status | Duration (s) | Error |\n')
-            f.write('|---|-------------|--------|--------------|-------|\n')
+            f.write('| # | Description | Status | Duration (s) | Error code | Error |\n')
+            f.write('|---|-------------|--------|--------------|------------|-------|\n')
             for r in self.results:
-                err = r.get('error_msg') or ''
-                f.write('| %d | %s | %s | %.1f | %s |\n' % (
+                err_code = r.get('error_code') or ''
+                err_msg = r.get('error_msg') or ''
+                f.write('| %d | %s | %s | %.1f | %s | %s |\n' % (
                     r['index'], r['description'], r['status'],
-                    r['duration_s'], err
+                    r['duration_s'], err_code, err_msg
                 ))
 
         self.get_logger().info('JSON: %s' % json_path)
@@ -361,16 +369,27 @@ def _str_to_bool(val):
     return val.lower() in ('true', '1', 'yes')
 
 
+def _default_goals_path():
+    """Return the default goals path from the package share directory."""
+    try:
+        share = get_package_share_directory('benchmark_tools')
+        return os.path.join(share, 'config', 'stage0b_goals.yaml')
+    except Exception:
+        # Fallback for development (source tree) environment
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '..', 'config', 'stage0b_goals.yaml'
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Stage 0B Navigation Functional Smoke Test'
     )
     parser.add_argument(
         '--goals', type=str,
-        default=os.path.join(
-            os.path.dirname(__file__), '..', 'config', 'stage0b_goals.yaml'
-        ),
-        help='Path to YAML goal definitions'
+        default=_default_goals_path(),
+        help='Path to YAML goal definitions (absolute, relative to CWD, or package-share-relative)'
     )
     parser.add_argument(
         '--output-dir', type=str, default='/tmp/stage0b_results',
@@ -390,12 +409,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Resolve goals relative to script location if not absolute
-    goals_path = args.goals
-    if not os.path.isabs(goals_path):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        goals_path = os.path.normpath(os.path.join(script_dir, goals_path))
-
+    goals_path = resolve_goals_path(args.goals)
     if not os.path.exists(goals_path):
         print('ERROR: Goals file not found: %s' % goals_path, file=sys.stderr)
         sys.exit(1)

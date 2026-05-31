@@ -123,7 +123,7 @@ local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: true
-      plugin_names: ["voxel_layer", "inflation_layer"]
+      plugins: ["voxel_layer", "inflation_layer"]
       global_frame: odom
       robot_base_frame: base_link
       update_frequency: 5.0
@@ -165,7 +165,7 @@ global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: true
-      plugin_names: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       global_frame: map
       robot_base_frame: base_link
       update_frequency: 1.0

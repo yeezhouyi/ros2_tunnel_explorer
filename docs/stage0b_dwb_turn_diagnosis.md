@@ -18,6 +18,49 @@ controller selection, or DWB parameter tuning.
 | Stage 1B (ROS2 node build) | PASS |
 | Stage 1C (simulation integration) | NOT STARTED — blocked on Stage 0B-1 |
 
+### ⚠ Configuration Defect Found During Review
+
+The Nav2 costmap configuration used an incorrect parameter name:
+
+| Config File | Had | Should Be |
+|-------------|-----|-----------|
+| `nav2_params.yaml` local_costmap | `plugin_names:` | `plugins:` |
+| `nav2_params.yaml` global_costmap | `plugin_names:` | `plugins:` |
+
+This means the original experiment's costmap layer assumptions are **not
+reliable**:
+
+- The local costmap may have been running default layers (`static_layer +
+  obstacle_layer + inflation_layer`) instead of the intended `voxel_layer +
+  inflation_layer`.
+- Any conclusions about voxel-layer-specific behaviour (footprint clearing,
+  unknown threshold, 3D raycasting) cannot be drawn from the experimental
+  data collected before this fix.
+- The diagnosis procedure below now requires `dump_nav2_diagnostic_params.sh`
+  to **confirm** which layers are actually loaded at runtime before
+  interpreting any costmap observations.
+
+**Reference**: Nav2 costmap configuration uses the `plugins:` key for layer
+lists. See [Nav2 Costmap 2D documentation](https://docs.nav2.org/configuration/packages/configuring-costmaps.html).
+
+### Local Costmap
+
+| Parameter | Value |
+|-----------|-------|
+| `track_unknown_space` | **not set** (defaults to `false` in local) |
+| `rolling_window` | `true` |
+| `width` x `height` | 3 m x 3 m |
+| `resolution` | 0.05 m |
+| `robot_radius` | 0.13 m |
+| `footprint` | **not set** (uses robot_radius) |
+| `footprint_padding` | **not set** (default 0.01 m) |
+| `plugins` | `[voxel_layer, inflation_layer]` |
+
+Note: Prior to the fix, the config used `plugin_names:` instead of `plugins:`,
+so the actual runtime layers for the original experiment are unknown.
+`dump_nav2_diagnostic_params.sh` must confirm runtime values before further
+diagnosis.
+
 ## Observed Behaviour
 
 | Goal | Position | Yaw | Result | Note |

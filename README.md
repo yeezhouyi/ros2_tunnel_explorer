@@ -5,8 +5,11 @@
 ## Status
 
 - Stage 0A (Environment Stability): **PASS**
-- Stage 0B (Navigation Functionality): PENDING (simulation-run required)
-- Stage 1 (Frontier-Based Exploration): **1A/1B implemented, 1C pending simulation integration**
+- Stage 0B-1 (Known-Free Navigation): **FAIL** — DWB turn diagnosis in progress
+- Stage 0B-D (DWB Turn Failure Diagnosis): **IN PROGRESS**
+- Stage 1A (Frontier Algorithms): **PASS**
+- Stage 1B (ROS2 Node Build): **PASS**
+- Stage 1C (Simulation Integration): **BLOCKED** — requires Stage 0B pass
 
 The base simulation stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox)
 is validated. See [Environment Feasibility](docs/environment_feasibility.md) for
@@ -171,10 +174,8 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) (Stage 1+)
-- [Environment Feasibility](docs/environment_feasibility.md)
-- [Algorithm Design](docs/algorithm.md) (Stage 2+)
-- [Benchmark Methodology](docs/benchmark.md) (Stage 3+)
+- [Environment Feasibility](docs/environment_feasibility.md) — Stage 0 verification
+- [DWB Turn Diagnosis](docs/stage0b_dwb_turn_diagnosis.md) — Stage 0B-D diagnostic plan
 - [ROS2 Jazzy Compatibility](docs/jazzy_compatibility.md)
 
 ## WSL2 Restart Checklist
