@@ -14,15 +14,19 @@
 # limitations under the License.
 
 """
-Stage 0B: Navigation Functional Smoke Test.
+Stage 0B-1: Navigation Functional Smoke Test.
 
-Reads a set of goal poses from a YAML file, sends them sequentially via
-the Nav2 NavigateToPose action server, and reports success/failure per
-goal along with aggregate statistics.
+Sends goals from a YAML config file to the Nav2 NavigateToPose action
+server sequentially. Each goal has an independent timeout; if it expires
+the goal is cancelled and, by default, the next goal starts after a brief
+cooldown.
 
 Usage:
     ros2 run benchmark_tools run_navigation_smoke_test.py \
         --goals /path/to/stage0b_goals.yaml \
+        --goal-timeout-seconds 30 \
+        --continue-on-failure true \
+        --cooldown-seconds 1.0 \
         --output-dir /tmp/stage0b_results
 
 Compatible with ROS2 Jazzy nav2_msgs/NavigateToPose action.
@@ -91,35 +95,64 @@ def _status_label(code):
 class NavigationSmokeTest(Node):
     """Sends goals from a YAML file to Nav2 and records results."""
 
-    def __init__(self, goals, output_dir):
+    def __init__(self, goals, output_dir, goal_timeout=30.0,
+                 continue_on_failure=True, cooldown=1.0):
         super().__init__('navigation_smoke_test')
         self.goals = goals
         self.output_dir = output_dir
+        self._goal_timeout = goal_timeout
+        self._continue_on_failure = continue_on_failure
+        self._cooldown = cooldown
         self.results = []
 
         self._client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
         self._current_goal_index = 0
-        self._current_result = None
         self._goal_start_time = None
         self._goal_handle = None
+        self._canceled_by_timeout = False
+
+        # State machine: IDLE -> NAVIGATING -> COOLDOWN -> IDLE / FINISHED
+        self._state = 'IDLE'
+        self._cooldown_until = 0.0
+
+        # Periodic check timer (100 ms) for timeout and cooldown
+        self._check_timer = self.create_timer(0.1, self._check_cb)
 
         self.get_logger().info(
             'Navigation smoke test loaded %d goals' % len(goals)
         )
 
     def run(self):
-        """Execute all goals sequentially and write reports."""
+        """Start executing goals."""
         self.get_logger().info('Waiting for navigate_to_pose action server...')
         if not self._client.wait_for_server(timeout_sec=30.0):
             self.get_logger().error(
                 'NavigateToPose action server not available after 30s'
             )
-            # Still write partial report
             self._finish()
             return
 
         self.get_logger().info('Action server ready. Starting goals.')
         self._send_next_goal()
+
+    def _check_cb(self):
+        """Periodic check: timeout during NAVIGATING, cooldown expiry."""
+        if self._state == 'NAVIGATING' and self._goal_handle is not None:
+            elapsed = time.time() - (self._goal_start_time or time.time())
+            if elapsed > self._goal_timeout:
+                self.get_logger().info(
+                    '  Goal timeout (%.1fs > %.1fs), cancelling...'
+                    % (elapsed, self._goal_timeout)
+                )
+                self._canceled_by_timeout = True
+                cancel_future = self._goal_handle.cancel_goal_async()
+                # The result callback will fire when cancel completes
+                # _canceled_by_timeout flag ensures it's recorded as TIMED_OUT
+
+        elif self._state == 'COOLDOWN':
+            if time.time() >= self._cooldown_until:
+                self._state = 'IDLE'
+                self._send_next_goal()
 
     def _send_next_goal(self):
         if self._current_goal_index >= len(self.goals):
@@ -127,7 +160,9 @@ class NavigationSmokeTest(Node):
             return
 
         goal_def = self.goals[self._current_goal_index]
-        desc = goal_def.get('description', 'goal %d' % self._current_goal_index)
+        desc = goal_def.get(
+            'description', 'goal %d' % self._current_goal_index
+        )
         self.get_logger().info(
             '[%d/%d] Sending: %s' % (
                 self._current_goal_index + 1, len(self.goals), desc
@@ -147,7 +182,9 @@ class NavigationSmokeTest(Node):
         pose.pose.orientation.w = goal_def['orientation'].get('w', 1.0)
         goal_msg.pose = pose
 
+        self._state = 'NAVIGATING'
         self._goal_start_time = time.time()
+        self._goal_handle = None
         send_goal_future = self._client.send_goal_async(
             goal_msg, feedback_callback=self._feedback_cb
         )
@@ -157,9 +194,7 @@ class NavigationSmokeTest(Node):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().warn('Goal rejected by action server')
-            self._record_result('REJECTED', error_msg='Goal rejected')
-            self._current_goal_index += 1
-            self._send_next_goal()
+            self._finish_goal('REJECTED', error_msg='Goal rejected')
             return
 
         self._goal_handle = goal_handle
@@ -168,25 +203,64 @@ class NavigationSmokeTest(Node):
 
     def _result_cb(self, future):
         result = future.result()
-        status = _status_label(result.status)
-        duration = time.time() - (self._goal_start_time or time.time())
+        elapsed = time.time() - (self._goal_start_time or time.time())
 
-        error_msg = None
-        if status == 'ABORTED':
-            if result.result and hasattr(result.result, 'result'):
-                error_msg = str(result.result.result)
-            else:
-                error_msg = 'ABORTED (no detail)'
+        if self._canceled_by_timeout:
+            status = 'TIMED_OUT'
+            self._canceled_by_timeout = False
+            error_msg = 'Goal timed out after %.1fs' % elapsed
+        else:
+            status = _status_label(result.status)
+            error_msg = None
+            if status == 'ABORTED':
+                error_msg = getattr(result.result, 'result', None)
+                if error_msg is not None:
+                    error_msg = str(error_msg)
+                else:
+                    error_msg = 'ABORTED (no detail)'
 
-        self._record_result(
-            status, duration_s=duration, error_msg=error_msg
-        )
-        self._current_goal_index += 1
-        self._send_next_goal()
+        self._finish_goal(status, duration_s=elapsed, error_msg=error_msg)
 
     def _feedback_cb(self, feedback_msg):
-        # Optional: log distance remaining or other feedback
         pass
+
+    def _finish_goal(self, status, duration_s=0.0, error_msg=None):
+        """Record result for the current goal and transition state."""
+        self._record_result(status, duration_s=duration_s, error_msg=error_msg)
+        self._current_goal_index += 1
+
+        if self._current_goal_index >= len(self.goals):
+            self._finish()
+            return
+
+        # Stop on first failure unless continue_on_failure is set
+        if status != 'SUCCEEDED' and not self._continue_on_failure:
+            self.get_logger().info(
+                'Stopping on %s (continue_on_failure=False)' % status
+            )
+            while self._current_goal_index < len(self.goals):
+                goal_def = self.goals[self._current_goal_index]
+                self.results.append({
+                    'index': self._current_goal_index,
+                    'description': goal_def.get('description', ''),
+                    'pose': {
+                        'x': goal_def['position']['x'],
+                        'y': goal_def['position']['y'],
+                        'frame_id': goal_def.get('frame_id', 'map'),
+                    },
+                    'status': 'SKIPPED',
+                    'duration_s': 0.0,
+                    'error_msg': None,
+                })
+                self._current_goal_index += 1
+            self._finish()
+            return
+
+        self._start_cooldown()
+
+    def _start_cooldown(self):
+        self._state = 'COOLDOWN'
+        self._cooldown_until = time.time() + self._cooldown
 
     def _record_result(self, status, duration_s=0.0, error_msg=None):
         goal_def = self.goals[self._current_goal_index]
@@ -207,6 +281,7 @@ class NavigationSmokeTest(Node):
         )
 
     def _finish(self):
+        self._check_timer.cancel()
         summary = compute_navigation_summary(self.results)
         self._write_reports(summary)
         self.get_logger().info('Smoke test complete.')
@@ -218,6 +293,11 @@ class NavigationSmokeTest(Node):
         report = {
             'timestamp': datetime.now().isoformat(),
             'source_goals': self._get_source_description(),
+            'config': {
+                'goal_timeout_seconds': self._goal_timeout,
+                'continue_on_failure': self._continue_on_failure,
+                'cooldown_seconds': self._cooldown,
+            },
             'summary': summary,
         }
 
@@ -229,7 +309,11 @@ class NavigationSmokeTest(Node):
         with open(md_path, 'w') as f:
             f.write('# Stage 0B: Navigation Smoke Test Report\n\n')
             f.write('- **Report generated**: %s\n' % report['timestamp'])
-            f.write('- **Source goals**: %s\n\n' % report['source_goals'])
+            f.write('- **Source goals**: %s\n' % report['source_goals'])
+            cfg = report['config']
+            f.write('- **Goal timeout**: %.1fs\n' % cfg['goal_timeout_seconds'])
+            f.write('- **Continue on failure**: %s\n' % cfg['continue_on_failure'])
+            f.write('- **Cooldown**: %.1fs\n\n' % cfg['cooldown_seconds'])
 
             s = summary
             f.write('## Summary\n\n')
@@ -239,6 +323,9 @@ class NavigationSmokeTest(Node):
             f.write('| Succeeded | %d |\n' % s['succeeded'])
             f.write('| Failed (ABORTED) | %d |\n' % s['failed'])
             f.write('| Canceled | %d |\n' % s['canceled'])
+            f.write('| Rejected | %d |\n' % s['rejected'])
+            f.write('| Timed out | %d |\n' % s['timed_out'])
+            f.write('| Skipped | %d |\n' % s['skipped'])
             f.write('| Unknown | %d |\n' % s['unknown'])
             f.write('| Success rate | %s |\n'
                      % ('%.1f%%' % (s['success_rate'] * 100)
@@ -282,6 +369,18 @@ def main():
         '--output-dir', type=str, default='/tmp/stage0b_results',
         help='Output directory for reports'
     )
+    parser.add_argument(
+        '--goal-timeout-seconds', type=float, default=30.0,
+        help='Maximum time per goal before cancellation (default 30.0)'
+    )
+    parser.add_argument(
+        '--continue-on-failure', type=bool, default=True,
+        help='Continue to next goal after failure (default true)'
+    )
+    parser.add_argument(
+        '--cooldown-seconds', type=float, default=1.0,
+        help='Pause between goals (default 1.0)'
+    )
     args = parser.parse_args()
 
     # Resolve goals relative to script location if not absolute
@@ -302,7 +401,12 @@ def main():
 
     rclpy.init(args=sys.argv)
     global _NODE
-    _NODE = NavigationSmokeTest(goals, args.output_dir)
+    _NODE = NavigationSmokeTest(
+        goals, args.output_dir,
+        goal_timeout=args.goal_timeout_seconds,
+        continue_on_failure=args.continue_on_failure,
+        cooldown=args.cooldown_seconds,
+    )
     try:
         _NODE.run()
         rclpy.spin(_NODE)

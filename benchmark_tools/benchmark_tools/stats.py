@@ -204,7 +204,10 @@ def compute_navigation_summary(results):
     - ``succeeded``
     - ``failed`` (ABORTED)
     - ``canceled``
-    - ``unknown``
+    - ``rejected``
+    - ``timed_out``
+    - ``skipped``
+    - ``unknown`` (status not in any recognised category)
     - ``success_rate`` (float 0.0–1.0, or None if total is 0)
     - ``total_duration_s``
     - ``mean_duration_s`` per goal
@@ -217,6 +220,9 @@ def compute_navigation_summary(results):
             'succeeded': 0,
             'failed': 0,
             'canceled': 0,
+            'rejected': 0,
+            'timed_out': 0,
+            'skipped': 0,
             'unknown': 0,
             'success_rate': None,
             'total_duration_s': 0.0,
@@ -227,7 +233,11 @@ def compute_navigation_summary(results):
     succeeded = sum(1 for r in results if r['status'] == 'SUCCEEDED')
     failed = sum(1 for r in results if r['status'] == 'ABORTED')
     canceled = sum(1 for r in results if r['status'] == 'CANCELED')
-    unknown = len(results) - succeeded - failed - canceled
+    rejected = sum(1 for r in results if r['status'] == 'REJECTED')
+    timed_out = sum(1 for r in results if r['status'] == 'TIMED_OUT')
+    skipped = sum(1 for r in results if r['status'] == 'SKIPPED')
+    known = succeeded + failed + canceled + rejected + timed_out + skipped
+    unknown = len(results) - known
 
     durations = [r.get('duration_s', 0.0) for r in results]
 
@@ -236,6 +246,9 @@ def compute_navigation_summary(results):
         'succeeded': succeeded,
         'failed': failed,
         'canceled': canceled,
+        'rejected': rejected,
+        'timed_out': timed_out,
+        'skipped': skipped,
         'unknown': unknown,
         'success_rate': round(succeeded / len(results), 3),
         'total_duration_s': round(sum(durations), 1),
