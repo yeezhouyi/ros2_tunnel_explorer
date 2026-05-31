@@ -26,3 +26,4 @@
 
     # Goal
     orient_goal_toward_frontier: true
+    min_goal_distance_meters: 0.50

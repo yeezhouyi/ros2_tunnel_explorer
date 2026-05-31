@@ -43,7 +43,8 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   tf_buffer_(this->get_clock()),
   tf_listener_(tf_buffer_),
   detector_(FrontierDetectorConfig{}),
-  blacklist_()
+  blacklist_(),
+  goal_selector_(FrontierGoalSelectorConfig{})
 {
   // ── Declare parameters with defaults ─────────────────────────────────
   map_topic_ = declare_parameter<std::string>("map_topic", "/map");
@@ -57,7 +58,7 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
 
   exploration_period_seconds_ = declare_parameter<double>(
     "exploration_period_seconds", 1.0);
-  cooldown_seconds_ = declare_parameter<double>("cooldown_seconds", 1.0);
+  cooldown_seconds_ = declare_parameter<double>("cooldown_seconds", 5.0);
   goal_timeout_seconds_ = declare_parameter<double>("goal_timeout_seconds", 60.0);
   min_cluster_size_ = declare_parameter<int>("min_cluster_size", 10);
   free_threshold_ = declare_parameter<int>("free_threshold", 0);
@@ -71,6 +72,8 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     "blacklist_timeout_seconds", 60.0);
   orient_goal_toward_frontier_ = declare_parameter<bool>(
     "orient_goal_toward_frontier", true);
+  min_goal_distance_meters_ = declare_parameter<double>(
+    "min_goal_distance_meters", 0.50);
 
   // Reconfigure detector with actual parameters.
   FrontierDetectorConfig cfg;
@@ -79,6 +82,11 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   cfg.frontier_neighbor_connectivity = frontier_neighbor_connectivity_;
   cfg.cluster_connectivity = cluster_connectivity_;
   detector_ = FrontierDetector(cfg);
+
+  // Configure goal selector.
+  FrontierGoalSelectorConfig gcfg;
+  gcfg.min_goal_distance_meters = min_goal_distance_meters_;
+  goal_selector_ = FrontierGoalSelector(gcfg);
 
   // ── Map subscription (transient_local + reliable) ────────────────────
   auto map_qos = rclcpp::QoS(1).transient_local().reliable();
@@ -196,12 +204,6 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           }
         }
 
-      // Sort by distance to robot (nearest first).
-        std::sort(valid.begin(), valid.end(),
-          [](const FrontierCluster & a, const FrontierCluster & b) {
-            return a.distance_to_robot < b.distance_to_robot;
-        });
-
         if (valid.empty()) {
           if (!clusters.empty() &&
             clusters.size() == blacklisted_positions.size())
@@ -221,18 +223,33 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
               transitionTo(ExplorationState::COMPLETED);
             }
           }
-          publishMarkers(clusters, blacklisted_positions, std::nullopt);
+          publishMarkers(clusters, blacklisted_positions, std::nullopt, {});
           return;
         }
         frontier_empty_count_ = 0;
 
-      // Pick nearest valid frontier.
-        const auto & target = valid.front();
+      // Select best goal via FrontierGoalSelector.
+        GoalSelectionResult sel = goal_selector_.select(valid, gm, robot_pose);
+
+        if (!sel.selected) {
+          RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+            "All %zu frontiers within min_goal_distance=%.2f m "
+            "— waiting for map update",
+            valid.size(), min_goal_distance_meters_);
+          publishMarkers(
+            clusters, blacklisted_positions, std::nullopt, sel.too_close_goals);
+          return;
+        }
+
+      // Use the selected cluster.
+        const auto & target = *sel.selected;
         const Point2D goal_pt = target.representative_world;
 
         RCLCPP_INFO(get_logger(),
-        "Goal: (%.2f, %.2f) [%zu cells, %.1f m]",
-        goal_pt.x, goal_pt.y, target.size(), target.distance_to_robot);
+        "Goal: (%.2f, %.2f) [%zu cells, centroid=%.1f m, goal=%.1f m]",
+        goal_pt.x, goal_pt.y, target.size(),
+        target.centroid_distance_to_robot,
+        target.goal_distance_to_robot);
 
       // Prepare NavigateToPose goal.
         auto goal_msg = nav2_msgs::action::NavigateToPose::Goal();
@@ -271,7 +288,8 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         action_client_->async_send_goal(goal_msg, send_opts);
         transitionTo(ExplorationState::NAVIGATING);
 
-        publishMarkers(clusters, blacklisted_positions, goal_pt);
+        publishMarkers(
+          clusters, blacklisted_positions, goal_pt, sel.too_close_goals);
         return;
       }
 
@@ -290,7 +308,9 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             RCLCPP_INFO(
               get_logger(), "Blacklisted (%.2f, %.2f) for %.0f s",
               current_goal_->x, current_goal_->y, blacklist_timeout_seconds_);
-            action_client_->async_cancel_all_goals();
+            if (current_goal_handle_) {
+              action_client_->async_cancel_goal(current_goal_handle_);
+            }
             transitionTo(ExplorationState::COOLDOWN);
           }
         }
@@ -317,9 +337,11 @@ void TunnelFrontierExplorerNode::goalResponseCallback(
 {
   if (!handle) {
     RCLCPP_WARN(get_logger(), "Goal rejected by Nav2 server");
+    current_goal_ = std::nullopt;
     transitionTo(ExplorationState::IDLE);
     return;
   }
+  current_goal_handle_ = handle;
   RCLCPP_INFO(get_logger(), "Goal accepted by Nav2 server");
 }
 
@@ -386,6 +408,7 @@ void TunnelFrontierExplorerNode::resultCallback(
   }
 
   current_goal_ = std::nullopt;
+  current_goal_handle_.reset();
   transitionTo(ExplorationState::COOLDOWN);
 }
 
@@ -413,7 +436,8 @@ bool TunnelFrontierExplorerNode::getRobotPose(Point2D & robot_pose)
 void TunnelFrontierExplorerNode::publishMarkers(
   const std::vector<FrontierCluster> & clusters,
   const std::vector<Point2D> & blacklisted_positions,
-  const std::optional<Point2D> & selected_goal)
+  const std::optional<Point2D> & selected_goal,
+  const std::vector<Point2D> & too_close_positions)
 {
   visualization_msgs::msg::MarkerArray markers;
   auto make_deleteall = [](const std::string & ns)
@@ -496,6 +520,32 @@ void TunnelFrontierExplorerNode::publishMarkers(
     m.color.r = 0.5;
     m.color.g = 0.5;
     m.color.b = 0.5;
+    markers.markers.push_back(m);
+  }
+
+  // ── Too-close frontiers (yellow POINTS) ───────────────────────────
+  markers.markers.push_back(make_deleteall("too_close_frontiers"));
+  if (!too_close_positions.empty()) {
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = global_frame_;
+    m.header.stamp = this->now();
+    m.ns = "too_close_frontiers";
+    m.id = 0;
+    m.type = visualization_msgs::msg::Marker::POINTS;
+    m.action = visualization_msgs::msg::Marker::ADD;
+    m.scale.x = 0.12;
+    m.scale.y = 0.12;
+    m.color.a = 0.9;
+    m.color.r = 1.0;
+    m.color.g = 1.0;
+    m.color.b = 0.0;
+    for (const auto & pt : too_close_positions) {
+      geometry_msgs::msg::Point p;
+      p.x = pt.x;
+      p.y = pt.y;
+      p.z = 0.0;
+      m.points.push_back(p);
+    }
     markers.markers.push_back(m);
   }
 

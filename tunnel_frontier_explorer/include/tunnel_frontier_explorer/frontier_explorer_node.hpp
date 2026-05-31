@@ -32,6 +32,7 @@
 #include "tunnel_frontier_explorer/frontier_blacklist.hpp"
 #include "tunnel_frontier_explorer/frontier_cluster.hpp"
 #include "tunnel_frontier_explorer/frontier_detector.hpp"
+#include "tunnel_frontier_explorer/frontier_goal_selector.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -76,7 +77,8 @@ private:
   void publishMarkers(
     const std::vector<FrontierCluster> & clusters,
     const std::vector<Point2D> & blacklisted_positions,
-    const std::optional<Point2D> & selected_goal);
+    const std::optional<Point2D> & selected_goal,
+    const std::vector<Point2D> & too_close_positions);
   void transitionTo(ExplorationState new_state);
   const char * stateName(ExplorationState s) const;
 
@@ -93,6 +95,7 @@ private:
   // ── Pure algorithm objects ───────────────────────────────────────────
   FrontierDetector detector_;
   FrontierBlacklist blacklist_;
+  FrontierGoalSelector goal_selector_;
 
   // ── Parameters ───────────────────────────────────────────────────────
   double exploration_period_seconds_;
@@ -105,6 +108,7 @@ private:
   double blacklist_radius_;
   double blacklist_timeout_seconds_;
   bool orient_goal_toward_frontier_;
+  double min_goal_distance_meters_;
   std::string map_topic_;
   std::string global_frame_;
   std::string robot_base_frame_;
@@ -117,6 +121,7 @@ private:
   rclcpp::Time cooldown_start_;
   rclcpp::Time navigating_start_time_;
   std::optional<Point2D> current_goal_;
+  GoalHandle::SharedPtr current_goal_handle_;
 
   // Consecutive empty frontier cycles before entering COMPLETED.
   std::size_t frontier_empty_count_ = 0;
