@@ -53,8 +53,12 @@ struct FrontierCluster
   /// World coordinates of the representative cell.
   Point2D representative_world;
 
-  /// Euclidean distance from the robot to centroid_world (populated by detector).
-  double distance_to_robot = 0.0;
+  /// Euclidean distance from robot to centroid_world (populated by detector).
+  double centroid_distance_to_robot = 0.0;
+
+  /// Euclidean distance from robot to representative_world (populated by
+  /// detector, may be updated by FrontierGoalSelector).
+  double goal_distance_to_robot = 0.0;
 
   /// Number of cells in this cluster.
   std::size_t size() const {return cells.size();}

@@ -333,7 +333,8 @@ TEST(FrontierDetectorTest, distanceToRobotPopulated)
   // Distance should be sqrt(1.5^2 + 1.5^2) ≈ 2.121
   auto clusters = detector.detect(map, {0, 0});
   ASSERT_EQ(clusters.size(), 1u);
-  EXPECT_NEAR(clusters[0].distance_to_robot, 2.121, 0.01);
+  EXPECT_NEAR(clusters[0].centroid_distance_to_robot, 2.121, 0.01);
+  EXPECT_NEAR(clusters[0].goal_distance_to_robot, 2.121, 0.01);
 }
 
 // ── 16. Invalid connectivity throws in constructor ───────────────────────

@@ -220,10 +220,17 @@ std::vector<FrontierCluster> FrontierDetector::detect(
           // Find the closest free cell to the centroid for navigation.
           computeRepresentative(map, cluster);
 
-          // Distance to robot (squared for comparison, sqrt for storage).
-          const double dx = cluster.centroid_world.x - robot_position.x;
-          const double dy = cluster.centroid_world.y - robot_position.y;
-          cluster.distance_to_robot = std::sqrt(dx * dx + dy * dy);
+          // Distance from robot to centroid and representative.
+          {
+            const double dx = cluster.centroid_world.x - robot_position.x;
+            const double dy = cluster.centroid_world.y - robot_position.y;
+            cluster.centroid_distance_to_robot = std::sqrt(dx * dx + dy * dy);
+          }
+          {
+            const double dx = cluster.representative_world.x - robot_position.x;
+            const double dy = cluster.representative_world.y - robot_position.y;
+            cluster.goal_distance_to_robot = std::sqrt(dx * dx + dy * dy);
+          }
 
           clusters.push_back(std::move(cluster));
         }
