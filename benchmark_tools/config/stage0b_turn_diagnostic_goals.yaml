@@ -1,0 +1,85 @@
+# Stage 0B-D: DWB Turn Failure Diagnosis — Minimal Reproduction
+#
+# Purpose: Reproduce the first DWB "No valid trajectories" failure at the
+# ~34° heading change (goal 4 → goal 5 boundary in the full 11-goal set).
+#
+# Only 4 goals (all confirmed SUCCEEDED in the previous run):
+#   1-3: East 1m/2m/3m (straight line, 0° yaw)
+#   4:   North-east shallow (3.3, 0.3, ~18° yaw) — the progressive turn
+#
+# After the 4th goal completes, the robot stops at approximately (3.3, 0.3)
+# facing ~18° north of east. Do NOT send more goals — this is the diagnostic
+# trigger point for manual RViz inspection and Spin action testing.
+#
+# Usage:
+#   ros2 run benchmark_tools run_navigation_smoke_test.py \
+#     --goals "$(ros2 pkg prefix --share benchmark_tools)/config/stage0b_turn_diagnostic_goals.yaml" \
+#     --goal-timeout-seconds 30 \
+#     --continue-on-failure true \
+#     --cooldown-seconds 1
+#
+# After goals complete, manually run:
+#   ros2 topic list | grep -E 'costmap|footprint'
+#   ros2 action send_goal /spin nav2_msgs/action/Spin \
+#     "{target_yaw: 1.5708, time_allowance: {sec: 10, nanosec: 0}}" --feedback
+
+goals:
+  # ── Segment 1: East (3 goals, 0° yaw) ──────────────────────────────
+  - name: "east_1m"
+    description: "East 1m"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 1.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - name: "east_2m"
+    description: "East 2m"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 2.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  - name: "east_3m"
+    description: "East 3m"
+    frame_id: "map"
+    yaw_deg: 0
+    position:
+      x: 3.0
+      y: 0.0
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      w: 1.0
+
+  # ── Segment 2: Single shallow turn (1 goal, ~18° yaw) ──────────────
+  # Robot ends at approximately (3.3, 0.3) facing ~18° north of east.
+  # This is the diagnostic trigger point.
+  - name: "north_east_shallow"
+    description: "North-east shallow (3.3, 0.3)"
+    frame_id: "map"
+    yaw_deg: 18
+    position:
+      x: 3.3
+      y: 0.3
+      z: 0.0
+    orientation:
+      x: 0.0
+      y: 0.0
+      z: 0.156
+      w: 0.988

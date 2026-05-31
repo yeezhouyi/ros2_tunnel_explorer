@@ -354,6 +354,13 @@ class NavigationSmokeTest(Node):
 _NODE = None
 
 
+def _str_to_bool(val):
+    """Convert a string to boolean for argparse."""
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ('true', '1', 'yes')
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Stage 0B Navigation Functional Smoke Test'
@@ -374,7 +381,7 @@ def main():
         help='Maximum time per goal before cancellation (default 30.0)'
     )
     parser.add_argument(
-        '--continue-on-failure', type=bool, default=True,
+        '--continue-on-failure', type=_str_to_bool, default=True,
         help='Continue to next goal after failure (default true)'
     )
     parser.add_argument(

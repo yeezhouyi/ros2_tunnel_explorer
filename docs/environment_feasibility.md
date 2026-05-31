@@ -11,6 +11,17 @@ Stage 0 is split into two sub-stages:
   execute simple NavigateToPose goals with >= 90 % success rate in the default
   sandbox world.
 
+## Current Status Summary
+
+| Stage | Status | Notes |
+|-------|--------|-------|
+| Stage 0A (environment stability) | **PASS** | WSL2 environment verified — clock monotonic, no TF timeouts, 10 min stable |
+| Stage 0B-1 (known-free navigation) | **FAIL** — 36.4% (4/11) | ≥90% required. DWB "No valid trajectories" at >18° heading change. |
+| Stage 0B-D (DWB turn diagnosis) | **IN PROGRESS** | Minimal reproduction, RViz costmap inspection, Spin action test pending |
+| Stage 1A (frontier algorithms) | **PASS** | Pure C++ unit tests pass |
+| Stage 1B (ROS2 node build) | **PASS** | Package compiles, launches, static analysis clean |
+| Stage 1C (simulation integration) | **BLOCKED** | Requires Stage 0B-1 pass for clean baseline attribution |
+
 ## Test Infrastructure
 
 - **OS**: Ubuntu 24.04 (Noble) under WSL2 on Windows 11
@@ -127,6 +138,11 @@ cat /tmp/stage0b_results/stage0b_results.json
 cat /tmp/stage0b_results/stage0b_results.md
 ```
 
+### Diagnosis
+
+If Stage 0B-1 fails at heading changes, see the controlled diagnosis
+experiment in [stage0b_dwb_turn_diagnosis.md](stage0b_dwb_turn_diagnosis.md).
+
 ### RViz Diagnosis (Before Running)
 
 Before running the smoke test, visually check the local costmap at the
@@ -183,12 +199,31 @@ ros2 topic echo /tunnel_frontier_explorer/frontier_markers
 
 ## Outcome Decision
 
-| Result | Action |
-|--------|--------|
-| Stage 0A PASS, Stage 0B-1 PASS | Proceed to Stage 1C (Frontier Explorer) with WSL2 |
-| Stage 0A PASS, Stage 0B-1 FAIL (but known-free goals work) | Debug Frontier Explorer Node configuration |
-| Stage 0A PASS, Stage 0B-1 FAIL (known-free goals also fail) | Debug Nav2 base configuration, re-run 0B-1 |
-| Stage 0A H-criterion fails | Switch to native Ubuntu 24.04 |
+| Result | Action | Current Status |
+|--------|--------|----------------|
+| Stage 0A PASS, Stage 0B-1 PASS | Proceed to Stage 1C (Frontier Explorer) with WSL2 | — |
+| Stage 0A PASS, Stage 0B-1 FAIL (known-free goals also fail) | Diagnose Nav2 — Stage 0B-D | **ACTIVE** — 4/11 = 36.4%, DWB fail at >18° turn |
+| Stage 0A H-criterion fails | Switch to native Ubuntu 24.04 | — |
+
+### Diagnosis Path (Stage 0B-D)
+
+Stage 0B-D is a controlled diagnostic experiment triggered by Stage 0B-1
+failure. It does **not** modify Nav2 parameters — it collects evidence:
+
+1. Run 4-goal minimal reproduction (all previously passing)
+2. RViz costmap inspection at the turn trigger point (3.3, 0.3)
+3. Spin action test to distinguish costmap blocking from DWB path tracking
+4. Rosbag recording for offline analysis
+5. Parameter snapshot for baseline documentation
+
+### Outcome After Diagnosis
+
+| Diagnosis Result | Next Step |
+|-----------------|-----------|
+| Spin succeeds, costmap clean | Evaluate RotationShimController wrapping DWB |
+| Spin succeeds, costmap shows inflation blocking | Reduce inflation_radius or cost_scaling_factor |
+| Spin returns COLLISION_AHEAD | Fix footprint clearing or track_unknown_space |
+| Spin succeeds, costmap shows unknown blocking | Set local costmap track_unknown_space: false explicitly |
 
 Stage 0B-2 (Online SLAM and Frontier Explorer handover) is evaluated
 during Stage 1C simulation integration, not as a standalone test.
