@@ -17,11 +17,13 @@
 Record Stage 0 environment feasibility metrics.
 
 Monitors /clock, /scan, and /map topics during a simulation run.
-Outputs a JSON report and an optional Markdown summary.
+Outputs a JSON report and Markdown summary with separate warm-up and
+steady-state statistics.
 
 Usage:
     ros2 run benchmark_tools record_stage0_metrics.py \
         --duration 600 \
+        --warmup-seconds 30 \
         --output-dir /tmp/stage0_results
 """
 
@@ -32,6 +34,7 @@ import os
 import sys
 import time
 
+from benchmark_tools.stats import compute_topic_stats
 from nav_msgs.msg import OccupancyGrid
 import rclpy
 from rclpy.node import Node
@@ -43,22 +46,29 @@ from sensor_msgs.msg import LaserScan
 class Stage0MetricsRecorder(Node):
     """Records message reception statistics for Stage 0 verification."""
 
-    def __init__(self, duration_sec: float, output_dir: str):
+    def __init__(self, duration_sec: float, warmup_seconds: float,
+                 output_dir: str):
         super().__init__('stage0_metrics_recorder')
         self.duration_sec = duration_sec
+        self.warmup_seconds = warmup_seconds
         self.output_dir = output_dir
         self.start_time = None
+        self.warmup_end_time = None
 
-        # Per-message timestamps (seconds since epoch)
+        # Per-message timestamps (wall-clock seconds since epoch)
         self.clock_timestamps = []
         self.scan_timestamps = []
         self.map_timestamps = []
 
-        # Clock monotonicity check
+        # Sim-time samples for RTF: list of (wall_ts, sim_sec)
+        self.sim_time_samples = []
+
+        # Clock monotonicity check (strict: every sim_time must be >= previous)
         self.last_clock_value = None
         self.clock_non_monotonic_count = 0
+        self.clock_backward_events = []  # (wall_ts, sim_sec, prev_sim_sec)
 
-        # Gap detection threshold (seconds)
+        # Gap detection thresholds
         self.clock_gap_threshold = 0.5
         self.scan_gap_threshold = 1.0
         self.map_gap_threshold = 10.0
@@ -97,19 +107,32 @@ class Stage0MetricsRecorder(Node):
         self.shutdown_timer = self.create_timer(duration_sec, self.shutdown_cb)
 
         self.get_logger().info(
-            'Stage 0 metrics recorder started. Duration: %ds' % duration_sec
+            'Stage 0 metrics recorder started. '
+            'Duration: %ds, Warm-up: %ds' % (duration_sec, warmup_seconds)
         )
 
     def clock_cb(self, msg: Clock):
         now = time.time()
         if self.start_time is None:
             self.start_time = now
+            self.warmup_end_time = now + self.warmup_seconds
         self.clock_timestamps.append(now)
 
         clock_sec = msg.clock.sec + msg.clock.nanosec * 1e-9
+        self.sim_time_samples.append((now, clock_sec))
+
+        # Strict monotonicity check
         if self.last_clock_value is not None:
             if clock_sec < self.last_clock_value:
                 self.clock_non_monotonic_count += 1
+                self.clock_backward_events.append({
+                    'wall_ts': now,
+                    'sim_sec': clock_sec,
+                    'prev_sim_sec': self.last_clock_value,
+                    'delta_s': round(
+                        self.last_clock_value - clock_sec, 6
+                    ),
+                })
         self.last_clock_value = clock_sec
 
     def scan_cb(self, msg: LaserScan):
@@ -126,6 +149,55 @@ class Stage0MetricsRecorder(Node):
                len(self.scan_timestamps), len(self.map_timestamps))
         )
 
+    def _compute_rtf(self):
+        """
+        Compute Real-Time Factor from sim_time_samples.
+
+        Returns (rtf, total_wall_sec, total_sim_sec).
+        Uses the first and last sample to avoid noise from startup.
+        """
+        if len(self.sim_time_samples) < 2:
+            return None, 0.0, 0.0
+
+        first_wall, first_sim = self.sim_time_samples[0]
+        last_wall, last_sim = self.sim_time_samples[-1]
+
+        # Filter to steady-state (post-warmup) for primary RTF
+        steady_samples = [
+            (w, s) for w, s in self.sim_time_samples
+            if self.warmup_end_time and w >= self.warmup_end_time
+        ]
+
+        def ratio(samples):
+            if len(samples) < 2:
+                return None, 0.0, 0.0
+            fw, fs = samples[0]
+            lw, ls = samples[-1]
+            dw = lw - fw
+            ds = ls - fs
+            if dw <= 0:
+                return None, dw, ds
+            return ds / dw, dw, ds
+
+        full_rtf, full_dw, full_ds = ratio(self.sim_time_samples)
+        steady_rtf, steady_dw, steady_ds = (
+            ratio(steady_samples) if len(steady_samples) >= 2
+            else (None, 0.0, 0.0)
+        )
+
+        return {
+            'full': {
+                'rtf': round(full_rtf, 4) if full_rtf is not None else None,
+                'wall_time_s': round(full_dw, 1),
+                'sim_time_s': round(full_ds, 1),
+            },
+            'steady': {
+                'rtf': round(steady_rtf, 4) if steady_rtf is not None else None,
+                'wall_time_s': round(steady_dw, 1),
+                'sim_time_s': round(steady_ds, 1),
+            },
+        }
+
     def shutdown_cb(self):
         self.get_logger().info('Duration reached. Computing metrics...')
         report = self.compute_metrics()
@@ -133,92 +205,85 @@ class Stage0MetricsRecorder(Node):
         self.get_logger().info('Report written to %s' % self.output_dir)
         raise SystemExit(0)
 
-    def _compute_gaps(self, timestamps, gap_threshold):
-        """Count gaps larger than threshold between consecutive timestamps."""
-        if len(timestamps) < 2:
-            return 0, []
-        gaps = []
-        for i in range(1, len(timestamps)):
-            dt = timestamps[i] - timestamps[i - 1]
-            if dt > gap_threshold:
-                gaps.append({
-                    'index': i,
-                    'duration_s': round(dt, 3),
-                    'elapsed_s': round(
-                        timestamps[i] - (self.start_time or 0), 1
-                    ),
-                })
-        return len(gaps), gaps
-
     def compute_metrics(self):
         """Compute all Stage 0 metrics from collected timestamps."""
-        actual_duration = time.time() - (self.start_time or time.time())
+        now = time.time()
+        actual_duration = now - (self.start_time or now)
+        warmup_end = self.warmup_end_time or now
 
-        def stats(ts_list, label):
-            if not ts_list:
-                return {'count': 0, 'label': label}
-            n = len(ts_list)
-            mean_hz = n / actual_duration if actual_duration > 0 else 0.0
-            intervals = [
-                ts_list[i] - ts_list[i - 1] for i in range(1, n)
-            ]
-            mean_iv = (
-                round(sum(intervals) / len(intervals), 4)
-                if intervals else None
-            )
-            return {
-                'label': label,
-                'count': n,
-                'mean_hz': round(mean_hz, 2),
-                'min_interval_s': round(min(intervals), 4) if intervals else None,
-                'max_interval_s': round(max(intervals), 4) if intervals else None,
-                'mean_interval_s': mean_iv,
-            }
+        # Topic stats per phase
+        clock_full, clock_steady = compute_topic_stats(
+            self.clock_timestamps, self.start_time, warmup_end,
+            '/clock', self.clock_gap_threshold,
+        )
+        scan_full, scan_steady = compute_topic_stats(
+            self.scan_timestamps, self.start_time, warmup_end,
+            '/scan', self.scan_gap_threshold,
+        )
+        map_full, map_steady = compute_topic_stats(
+            self.map_timestamps, self.start_time, warmup_end,
+            '/map', self.map_gap_threshold,
+        )
 
-        clock_stats = stats(self.clock_timestamps, '/clock')
-        scan_stats = stats(self.scan_timestamps, '/scan')
-        map_stats = stats(self.map_timestamps, '/map')
+        # RTF
+        rtf = self._compute_rtf()
 
-        # Gap analysis
-        clock_gaps_count, clock_gaps = self._compute_gaps(
-            self.clock_timestamps, self.clock_gap_threshold
-        )
-        scan_gaps_count, scan_gaps = self._compute_gaps(
-            self.scan_timestamps, self.scan_gap_threshold
-        )
-        map_gaps_count, map_gaps = self._compute_gaps(
-            self.map_timestamps, self.map_gap_threshold
-        )
+        # Clock monotonicity summary
+        clock_monotonic = self.clock_non_monotonic_count == 0
+        backward_details = self.clock_backward_events[:20]
 
         return {
             'timestamp': datetime.now().isoformat(),
             'duration_s': round(actual_duration, 1),
+            'warmup_seconds': self.warmup_seconds,
+            'warmup_end_time_iso': (
+                datetime.fromtimestamp(warmup_end).isoformat()
+                if warmup_end else None
+            ),
+            'real_time_factor': rtf,
             'topics': {
-                'clock': clock_stats,
-                'scan': scan_stats,
-                'map': map_stats,
-            },
-            'monotonicity': {
-                'clock_non_monotonic_count': self.clock_non_monotonic_count,
-            },
-            'gaps': {
                 'clock': {
-                    'threshold_s': self.clock_gap_threshold,
-                    'count': clock_gaps_count,
-                    'details': clock_gaps[:10],
+                    'full': clock_full,
+                    'steady': clock_steady,
                 },
                 'scan': {
-                    'threshold_s': self.scan_gap_threshold,
-                    'count': scan_gaps_count,
-                    'details': scan_gaps[:10],
+                    'full': scan_full,
+                    'steady': scan_steady,
                 },
                 'map': {
-                    'threshold_s': self.map_gap_threshold,
-                    'count': map_gaps_count,
-                    'details': map_gaps[:10],
+                    'full': map_full,
+                    'steady': map_steady,
                 },
             },
+            'clock_monotonicity': {
+                'strictly_monotonic': clock_monotonic,
+                'non_monotonic_count': self.clock_non_monotonic_count,
+                'backward_events': backward_details,
+            },
         }
+
+    @staticmethod
+    def _write_topics_md(f, heading, topics_data):
+        """Write a topic stats table for full or steady phase."""
+        f.write('| Topic | Messages | Mean Hz | Min Interval | Max Interval | '
+                'Mean Interval | P95 Interval | P99 Interval | '
+                'Gap Count (>%.1fs) |\n' % (topics_data['clock']
+                                            ['gaps']['threshold_s']))
+        f.write('|-------|----------|---------|'
+                '--------------|--------------|'
+                '---------------|--------------|--------------|'
+                '------------------|\n')
+        for key in ['clock', 'scan', 'map']:
+            t = topics_data[key]
+            f.write(
+                '| %s | %d | %s | %s | %s | %s | %s | %s | %d |\n' % (
+                    t['label'], t['count'], t['mean_hz'],
+                    t['min_interval_s'], t['max_interval_s'],
+                    t['mean_interval_s'],
+                    t['p95_interval_s'], t['p99_interval_s'],
+                    t['gaps']['count'],
+                )
+            )
 
     def write_report(self, report):
         """Write JSON and Markdown reports."""
@@ -232,44 +297,72 @@ class Stage0MetricsRecorder(Node):
         # Markdown report
         md_path = os.path.join(self.output_dir, 'stage0_metrics.md')
         with open(md_path, 'w') as f:
+            now_dt = datetime.now()
             f.write('# Stage 0: Environment Feasibility Report\n\n')
-            f.write('- **Timestamp**: %s\n' % report['timestamp'])
-            f.write('- **Duration**: %ss\n\n' % report['duration_s'])
+            f.write('- **Report generated**: %s\n' % now_dt.isoformat())
+            f.write('- **Recording timestamp**: %s\n'
+                    % report['timestamp'])
+            f.write('- **Duration**: %ss\n' % report['duration_s'])
+            f.write('- **Warm-up period**: %ss\n\n'
+                    % report['warmup_seconds'])
 
-            f.write('## Topic Statistics\n\n')
+            # RTF section
+            f.write('## Real-Time Factor\n\n')
+            rtf = report.get('real_time_factor')
+            if rtf:
+                for phase in ['full', 'steady']:
+                    p = rtf.get(phase, {})
+                    f.write('### %s\n' % phase.capitalize())
+                    f.write('- RTF: %s\n' % p.get('rtf', 'N/A'))
+                    f.write('- Wall time: %ss\n' % p.get('wall_time_s', '?'))
+                    f.write('- Sim time: %ss\n\n' % p.get('sim_time_s', '?'))
+            else:
+                f.write('- RTF: N/A (insufficient samples)\n\n')
+
+            # Full-run topic statistics
+            f.write('## Full Run: Topic Statistics\n\n')
             f.write(
-                '| Topic | Messages | Mean Hz | '
-                'Min Interval | Max Interval | Mean Interval |\n'
+                'Includes the entire recording from t=0 to t=%ss, '
+                'including the warm-up transient.\n\n' % report['duration_s']
             )
+            self._write_topics_md(f, 'full', {
+                key: report['topics'][key]['full']
+                for key in ['clock', 'scan', 'map']
+            })
+            f.write('\n')
+
+            # Steady-state topic statistics
+            f.write('## Steady State: Topic Statistics\n\n')
             f.write(
-                '|-------|----------|---------|'
-                '--------------|--------------|---------------|\n'
+                'Excludes the first %ss warm-up period.\n\n'
+                % report['warmup_seconds']
             )
-            for key in ['clock', 'scan', 'map']:
-                t = report['topics'][key]
-                f.write(
-                    '| %s | %s | %s | %s | %s | %s |\n' % (
-                        t['label'], t['count'], t['mean_hz'],
-                        t['min_interval_s'], t['max_interval_s'],
-                        t['mean_interval_s']
+            self._write_topics_md(f, 'steady', {
+                key: report['topics'][key]['steady']
+                for key in ['clock', 'scan', 'map']
+            })
+            f.write('\n')
+
+            # Clock monotonicity
+            f.write('## Clock Monotonicity\n\n')
+            mono = report['clock_monotonicity']
+            f.write('- Strictly monotonic: %s\n' % mono['strictly_monotonic'])
+            f.write('- Non-monotonic events: %d\n'
+                    % mono['non_monotonic_count'])
+            if mono['backward_events']:
+                f.write('\n### Backward Events (first 20)\n\n')
+                f.write('| # | Wall Time | Sim Time | Previous Sim | Delta |\n')
+                f.write('|---|-----------|----------|--------------|-------|\n')
+                for i, ev in enumerate(mono['backward_events']):
+                    f.write(
+                        '| %d | %.1f | %s | %s | %ss |\n' % (
+                            i + 1,
+                            ev['wall_ts'],
+                            ev['sim_sec'],
+                            ev['prev_sim_sec'],
+                            ev['delta_s'],
+                        )
                     )
-                )
-
-            f.write('\n## Gap Analysis\n\n')
-            f.write('| Topic | Threshold | Gap Count |\n')
-            f.write('|-------|-----------|----------|\n')
-            for key in ['clock', 'scan', 'map']:
-                g = report['gaps'][key]
-                f.write(
-                    '| %s | %ss | %s |\n'
-                    % (key, g['threshold_s'], g['count'])
-                )
-
-            f.write('\n## Clock Monotonicity\n\n')
-            f.write(
-                '- Non-monotonic events: %s\n'
-                % report['monotonicity']['clock_non_monotonic_count']
-            )
 
         self.get_logger().info('JSON: %s' % json_path)
         self.get_logger().info('Markdown: %s' % md_path)
@@ -284,6 +377,11 @@ def main():
         help='Recording duration in seconds (default: 600 = 10 min)'
     )
     parser.add_argument(
+        '--warmup-seconds', type=float, default=30.0,
+        help='Duration of warm-up phase excluded from steady-state stats '
+             '(default: 30)'
+    )
+    parser.add_argument(
         '--output-dir', type=str, default='/tmp/stage0_results',
         help='Output directory for reports'
     )
@@ -291,7 +389,9 @@ def main():
 
     rclpy.init(args=sys.argv)
     try:
-        node = Stage0MetricsRecorder(args.duration, args.output_dir)
+        node = Stage0MetricsRecorder(
+            args.duration, args.warmup_seconds, args.output_dir
+        )
         rclpy.spin(node)
     except SystemExit:
         pass

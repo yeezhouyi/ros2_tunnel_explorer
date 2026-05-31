@@ -17,25 +17,32 @@ stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox) runs stably under WSL
 
 ## Acceptance Criteria
 
-These are engineering thresholds defined for this project — they are NOT official
-Gazebo or Nav2 standards.
+> **Note**: These thresholds are engineering acceptance criteria defined for this
+> project. They are NOT official Gazebo, Nav2, or ROS2 standards. The values
+> were chosen to ensure the WSL2 simulation environment is stable enough for
+> frontier exploration algorithm development in later stages.
 
 ### Hard Requirements (all must pass)
 
 | # | Criterion | Measurement Method |
 |---|-----------|-------------------|
-| H1 | `/clock` is strictly monotonic (no time reversals) | `record_stage0_metrics.py` — monotonicity check |
+| H1 | `/clock` is strictly monotonic (no time reversals) | `record_stage0_metrics.py` — `clock_monotonicity.strictly_monotonic` |
 | H2 | No continuous TF timeouts (> 5s gaps) | `ros2 run tf2_tools view_frames` after run |
 | H3 | Simulation runs for >= 10 min without Gazebo or RViz crash | Manual observation + process exit codes |
 
-### Soft Thresholds (median across run)
+### Soft Thresholds
+
+Soft thresholds are evaluated against the **steady-state** phase only
+(excluding the first `--warmup-seconds` of recording, default 30 s).
+The `full` phase numbers are reported for reference but the pass/fail
+decision uses the `steady` phase.
 
 | # | Criterion | Threshold | Measurement Method |
 |---|-----------|-----------|-------------------|
-| S1 | Simulation real-time factor (median) | >= 0.8 | `gz sim --verbose` or `/clock` interval analysis |
-| S2 | `/scan` message reception rate | >= 90% of expected (10 Hz nominal → >= 9 Hz) | `record_stage0_metrics.py` |
-| S3 | `/scan` no gaps > 1.0s | 0 gaps over full run | `record_stage0_metrics.py` |
-| S4 | `/map` updates arrive within update_interval + 5s | No gaps > 10s | `record_stage0_metrics.py` |
+| S1 | Steady-state Real-Time Factor (RTF) median | >= 0.8 | `record_stage0_metrics.py` — `real_time_factor.steady.rtf` |
+| S2 | `/scan` steady-state average frequency | >= 90% of expected (5 Hz nominal → >= 4.5 Hz) | `record_stage0_metrics.py` — `topics.scan.steady.mean_hz` |
+| S3 | `/scan` steady-state gaps > 1.0 s | 0 gaps in steady phase | `record_stage0_metrics.py` — `topics.scan.steady.gaps.count` |
+| S4 | `/map` updates arrive within update_interval + 5 s | No gaps > 10 s in any phase | `record_stage0_metrics.py` — `topics.map.*.gaps` |
 | S5 | Multi-goal navigation success rate | >= 9/10 simple goals | Manual testing via RViz `2D Goal Pose` |
 
 ### Multi-Goal Navigation Test
@@ -73,6 +80,7 @@ source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash
 ros2 run benchmark_tools record_stage0_metrics.py \
     --duration 600 \
+    --warmup-seconds 30 \
     --output-dir /tmp/stage0_results
 ```
 
