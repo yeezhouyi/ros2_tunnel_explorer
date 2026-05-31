@@ -34,13 +34,29 @@ SCRIPT_NAME="$(basename "$0")"
 TIMEOUT_SECONDS=60
 INTERVAL_SECONDS=2
 
+# Allow --timeout override from args
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --timeout) TIMEOUT_SECONDS="$2"; shift 2 ;;
+    --help)
+      sed -n 's/^# //p; /^$/q' "$0" | head -40
+      exit 0
+      ;;
+    *) shift ;;  # ignore unknown for compatibility
+  esac
+done
+
 # Source ROS2 and workspace if not already in environment.
 if ! command -v ros2 &> /dev/null; then
+  set +u
   source /opt/ros/jazzy/setup.bash
+  set -u
 fi
 if [ -z "${COLCON_PREFIX_PATH:-}" ]; then
   if [ -f "${HOME}/ros2_tunnel_explorer/install/setup.bash" ]; then
+    set +u
     source "${HOME}/ros2_tunnel_explorer/install/setup.bash"
+    set -u
   fi
 fi
 
@@ -58,10 +74,11 @@ while [ "${elapsed}" -lt "${TIMEOUT_SECONDS}" ]; do
   all_active=true
   for node in "${REQUIRED_NODES[@]}"; do
     state="$(ros2 lifecycle get "${node}" 2>/dev/null || echo "unknown")"
-    if [ "${state}" != "active" ]; then
-      all_active=false
-      break
-    fi
+    # ros2 lifecycle get returns "active [3]" — match on word prefix.
+    case "${state}" in
+      active*) ;;
+      *) all_active=false; break ;;
+    esac
   done
 
   if ${all_active}; then

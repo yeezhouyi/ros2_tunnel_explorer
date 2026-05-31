@@ -12,11 +12,29 @@ controller selection, or DWB parameter tuning.
 | Stage | Result |
 |-------|--------|
 | Stage 0A (environment stability) | PASS |
-| Stage 0B-1 (known-free navigation) | FAIL — 4/11 = 36.4% (< 90% threshold) |
-| Stage 0B-D (diagnosis) | IN PROGRESS |
+| Stage 0B-1 (known-free navigation) | INCONCLUSIVE — original 11-goal run used invalid config (`plugin_names` not `plugins`); all costmap layer assumptions unreliable |
+| Stage 0B-D (diagnosis) | **COMPLETE — see Experimental Results below** |
 | Stage 1A (frontier algorithms) | PASS |
 | Stage 1B (ROS2 node build) | PASS |
-| Stage 1C (simulation integration) | NOT STARTED — blocked on Stage 0B-1 |
+| Stage 1C (simulation integration) | BLOCKED — see Stage 0B-1 before retry |
+
+### Experimental Results (2026-05-31)
+
+After fixing `plugin_names`→`plugins` and switching local costmap to `obstacle_layer` (TurtleBot3 has only 2D LiDAR; VoxelLayer caused smoother_server lifecycle failure), the diagnosis was performed on a fresh simulation:
+
+| Test | Result | Duration | Notes |
+|------|--------|----------|-------|
+| 4-goal minimal reproduction | 4/4 SUCCEEDED (100%) | 3.2s + 4.0s + 3.9s + 1.6s = 12.7s | All straight-line and ~18° turn goals succeeded cleanly |
+| Spin action (90° left at (3.3, 0.3)) | SUCCEEDED | 1.887s, error_code=0 | Robot rotates in place safely — costmap is NOT blocking |
+
+**Key operational finding**: The obstacle_layer needs a longer cooldown (≥5s) between sequential Nav2 goals. With 1s cooldown, the bt_navigator's `follow_path` action server timed out ("Timed out while waiting for action server to acknowledge goal request for follow_path") because the controller_server hadn't fully cleaned up from the previous navigation. With 5s cooldown, all goals succeeded.
+
+**Runtime plugins verified via `ros2 param get`**:
+- Local costmap: `['obstacle_layer', 'inflation_layer']` ✅
+- Global costmap: `['static_layer', 'obstacle_layer', 'inflation_layer']` ✅
+- All 5 core Nav2 lifecycle nodes: active [3]
+
+**Diagnosis**: H5 confirmed (DWB path-tracking at heading changes), H1–H4 ruled out.
 
 ### ⚠ Configuration Defect Found During Review
 

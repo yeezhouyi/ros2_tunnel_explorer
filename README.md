@@ -4,16 +4,32 @@
 
 ## Status
 
-- Stage 0A (Environment Stability): **PASS**
-- Stage 0B-1 (Known-Free Navigation): **PASS** — RotationShimController + DWB, 60s timeout, 10/11 = 90.9%
-- Stage 0B-D (DWB Turn Failure Diagnosis): **COMPLETE** — root cause is DWB path-tracking at heading changes
-- Stage 1A (Frontier Algorithms): **PASS**
-- Stage 1B (ROS2 Node Build): **PASS**
-- Stage 1C (Simulation Integration): **READY** — smoke test in progress
+| Stage | Description | Status |
+|-------|-------------|--------|
+| 0A | WSL2 Environment Stability | **PASS** |
+| 0B-1 | Known-Free Navigation (RotationShim + DWB, 60s, 10/11) | **PASS** |
+| 0B-D | DWB Turn Failure Diagnosis | **RESOLVED** |
+| 1A | Frontier Algorithms (detector + blacklist + goal selector) | **PASS** |
+| 1B | ROS2 Node Build & Unit Tests (24+ tests) | **PASS** |
+| **1C** | **Nearest-Frontier Closed-Loop Integration** | **PASS** |
 
-The base simulation stack (TurtleBot3 + Gazebo Harmonic + Nav2 + SLAM Toolbox)
-is validated. See [Environment Feasibility](docs/environment_feasibility.md) for
-Stage 0 details.
+### Stage 1C Baseline Metrics
+
+| Metric | Result |
+|--------|--------|
+| Navigation goal success rate | **18/18 = 100 %** |
+| Unique frontier goals visited | **12** |
+| Autonomous exploration runtime | **5+ min** |
+| Robot movement range | **(0, 0) → (3.88, 0.40)** |
+| Node crashes | **0** |
+| Nav2 lifecycle failures | **0** |
+| Near-goal filter activations (`centroid < 0.50 m`) | **12/18** |
+
+**Known baseline limitation**: nearest-frontier selection creates local revisit
+cycles in bounded areas. This is the baseline for comparison — Stage 2
+introduces information gain and revisit-aware scoring to quantify improvement.
+
+See [Stage 1C Smoke Results](docs/stage1c_smoke_results.md) for full details.
 
 ## Prerequisites
 
@@ -103,8 +119,8 @@ cat /tmp/stage0b_results/stage0b_results.md
 Stage 1 uses `tunnel_frontier_explorer` (C++) to detect frontier clusters from
 the `/map` occupancy grid and send nearest-frontier goals to Nav2.
 
-> **Note**: Stage 1C (simulation integration) requires Stage 0B navigation
-> validation first. Run Stage 0B before debugging frontier explorer failures.
+> **Stage 1C verified**: 18/18 navigation goals succeeded, 12 unique frontiers
+> visited, 0 crashes over 5+ min. See [Smoke Results](docs/stage1c_smoke_results.md).
 
 ### Prerequisites
 
@@ -137,6 +153,7 @@ Add a MarkerArray display in RViz subscribed to `/frontier_markers`:
 | `frontier_clusters` | Green | Points | Centroids of all detected frontier clusters |
 | `selected_goal` | Red | Sphere | Currently selected navigation goal |
 | `blacklisted` | Grey | Sphere | Temporarily forbidden failed goals |
+| `too_close_frontiers` | Yellow | Points | Candidate goals within `min_goal_distance_meters` (filtered by FrontierGoalSelector) |
 
 ### Parameters
 
@@ -153,6 +170,7 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 | `blacklist_radius_meters` | 0.5 | Radius to blacklist failed goals |
 | `blacklist_timeout_seconds` | 60.0 | Blacklist expiry time |
 | `orient_goal_toward_frontier` | true | Face the robot toward the goal |
+| `min_goal_distance_meters` | 0.50 | Minimum distance from robot to goal; prevents false-success within Nav2 `xy_goal_tolerance` |
 
 ### Architecture
 
@@ -160,6 +178,10 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
   clustering, centroid computation, and representative-cell selection.
 - `FrontierBlacklist`: Pure C++ class (no ROS deps) for radius + timeout-based
   goal blacklisting with injectable clocks for deterministic testing.
+- `FrontierGoalSelector`: Pure C++ class (no ROS deps) that enforces
+  `min_goal_distance_meters` from robot to goal; searches cluster for
+  alternative free cells when the representative is too close, preventing
+  false-success cycles caused by Nav2 `xy_goal_tolerance`.
 - `TunnelFrontierExplorerNode`: ROS2 node with 6-state machine
   (WAITING_FOR_MAP → WAITING_FOR_NAV2 → IDLE → NAVIGATING → COOLDOWN → COMPLETED).
 
@@ -170,14 +192,77 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 | `tunnel_explorer_bringup` | Python/YAML | Launch files, configs, RViz views |
 | `benchmark_tools` | Python | Metrics recording, analysis, plotting |
 | `tunnel_frontier_explorer` | C++ | Frontier-based autonomous exploration (Stage 1, nearest-frontier baseline) |
-| `tunnel_centerline_extractor` | C++ | Tunnel centerline distance field extraction (Stage 4) |
-| `tunnel_aware_planner` | C++ | Tunnel-aware global planner plugin for Nav2 (Stage 5) |
-| `tunnel_worlds` | Python/SDF | Parametric tunnel world generator (Stage 3) |
+| `tunnel_centerline_extractor` | C++ | Tunnel centerline distance field extraction (Planned — Stage 4) |
+| `tunnel_aware_planner` | C++ | Tunnel-aware global planner plugin for Nav2 (Planned — Stage 5) |
+| `tunnel_worlds` | Python/SDF | Parametric tunnel world generator (Planned — Stage 3) |
+
+## Quick Start (Stage 2A: Baseline Benchmark)
+
+Stage 2A runs the nearest-frontier baseline 5× to collect repeatability metrics.
+This establishes the baseline for comparing tunnel-aware scoring (Stage 2B+).
+
+The benchmark supports **early-stop-on-completed**: in bounded environments the
+robot may finish exploration in 2-3 minutes. Instead of waiting the full 600 s,
+the benchmark detects the COMPLETED state, applies a grace window, and finishes
+early. The primary metric becomes **time-to-completion** rather than goals-per-time.
+
+### Single run
+
+```bash
+./scripts/run_stage2a_benchmark.sh \
+  --output-dir ~/stage2a_benchmark \
+  --duration 600 \
+  --run-id 01 \
+  --stop-on-completed true \
+  --completed-grace-seconds 20
+```
+
+### Full benchmark (5 runs)
+
+```bash
+for i in $(seq -w 1 5); do
+  ./scripts/run_stage2a_benchmark.sh \
+    --output-dir ~/stage2a_benchmark \
+    --duration 600 \
+    --run-id "${i}" \
+    --stop-on-completed true \
+    --completed-grace-seconds 20
+  sleep 10
+done
+```
+
+### Aggregation (after all runs)
+
+```bash
+./scripts/aggregate_stage2a_results.sh ~/stage2a_benchmark
+```
+
+Only `COMPLETED` runs are included in the aggregate. Excluded runs are listed
+separately. Use `--allow-timeout` to include `TIMEOUT` runs.
+
+### Each run produces
+
+- `benchmark_results.md` — goals, success rate, unique goals, run status, completion time
+- `frontier_explorer.log` — full explorer log
+- `bag/` — ROS2 bag with `/map`, `/odom`, `/cmd_vel`, `/tf`, markers
+
+Run with `--wait-time 90` on WSL2 to account for DDS discovery delay (default).
+
+### Run status reference
+
+| Status | Meaning |
+|--------|---------|
+| `COMPLETED` | Exploration finished within the max duration |
+| `TIMEOUT` | Max duration reached before completion |
+| `CRASHED` | Explorer node crashed during run |
+| `STARTUP_FAILED` | Nav2 not ready after retries |
+| `INVALID_ORCHESTRATION_TERMINATION` | Run externally terminated or outputs incomplete |
 
 ## Documentation
 
 - [Environment Feasibility](docs/environment_feasibility.md) — Stage 0 verification
 - [DWB Turn Diagnosis](docs/stage0b_dwb_turn_diagnosis.md) — Stage 0B-D diagnostic plan
+- [Stage 1C Smoke Results](docs/stage1c_smoke_results.md) — nearest-frontier baseline verification
 - [ROS2 Jazzy Compatibility](docs/jazzy_compatibility.md)
 
 ## WSL2 Restart Checklist
@@ -193,9 +278,22 @@ common issues:
    (`gz sim -g`) can inadvertently start a second server with an empty
    `empty.sdf` world if a server is not already running, which conflicts
    with the main simulation.
-3. **Verify topics**: After launch, confirm `/clock`, `/scan`, and `/map`
+3. **Wait for Nav2 (WSL2 DDS discovery delay)**: Under WSL2, the ROS2 daemon
+   takes 60–90 s to discover all lifecycle nodes even after they are running.
+   Run `scripts/wait_for_nav2_active.sh` — if it times out at 60 s, retry;
+   the nodes are likely up but not yet discovered. The benchmark script uses
+   `--wait-time 90` by default.
+4. **SLAM Toolbox lifecycle race**: In rare cases, `slam_toolbox` gets stuck
+   in `unconfigured [1]` because the lifecycle manager sends CONFIGURE/ACTIVATE
+   before the node is ready. Workaround:
+   ```bash
+   ros2 lifecycle set /slam_toolbox configure
+   ros2 lifecycle set /slam_toolbox activate
+   ```
+   After activation, Nav2 nodes that depend on the `map` frame will come up.
+5. **Verify topics**: After launch, confirm `/clock`, `/scan`, and `/map`
    are publishing before starting metrics recording.
-4. **Monitor DDS**: If you see `Failed init_port fastrtps_port7000:
+6. **Monitor DDS**: If you see `Failed init_port fastrtps_port7000:
    open_and_lock_file failed` errors, run `cleanup_simulation.sh` again.
 
 ## ROS2 Jazzy Compatibility Notes
