@@ -206,6 +206,51 @@
           </material>
         </visual>
 
+        <!-- Junction filler walls: seal gap between vertical trunk walls and
+             angled branch outer walls at the junction. Without these, the lidar
+             can see through the geometric gap to the exterior. -->
+        <collision name="left_junction_filler_collision">
+          <pose>-0.9 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="left_junction_filler_visual">
+          <pose>-0.9 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <collision name="right_junction_filler_collision">
+          <pose>0.9 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="right_junction_filler_visual">
+          <pose>0.9 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
         <!-- Branch end caps: closed ends so frontiers have clean termination. -->
         <collision name="left_branch_end_collision">
           <pose>-2.925 11.567 1.0 0 0 2.094395</pose>
