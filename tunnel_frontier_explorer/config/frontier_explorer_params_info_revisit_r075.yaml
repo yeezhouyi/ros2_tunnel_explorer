@@ -1,0 +1,40 @@
+/**:
+  ros__parameters:
+    # Topics
+    map_topic: /map
+    navigate_to_pose_action: /navigate_to_pose
+    marker_topic: /frontier_markers
+
+    # Frames
+    global_frame: map
+    robot_base_frame: base_footprint
+
+    # Timing
+    exploration_period_seconds: 1.0
+    cooldown_seconds: 5.0
+    goal_timeout_seconds: 60.0
+
+    # Frontier detection
+    min_cluster_size: 10
+    free_threshold: 0
+    frontier_neighbor_connectivity: 4
+    cluster_connectivity: 8
+
+    # Blacklist
+    blacklist_radius_meters: 0.5
+    blacklist_timeout_seconds: 60.0
+
+    # Goal
+    orient_goal_toward_frontier: true
+    min_goal_distance_meters: 0.50
+
+    # ── Stage 2C: revisit_radius 0.50 → 0.75 ──────────────────────────────
+    selection_strategy: information_gain_revisit
+
+    information_gain_radius_meters: 0.75
+    revisit_radius_meters: 0.75
+    max_revisit_count: 3
+
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5

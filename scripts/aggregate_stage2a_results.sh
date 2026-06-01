@@ -91,7 +91,8 @@ for run_dir in run_dirs:
             break
 
     if best_data is None:
-        continue  # no JSON found for this run — skip
+        infra_excluded.append((run_dir.name, "INVALID_ORCHESTRATION_TERMINATION", None))
+        continue
 
     run_id = run_dir.name
     status = best_data.get("run_status", "")
