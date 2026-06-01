@@ -52,20 +52,21 @@
       <pose>0 0 0 0 0 0</pose>
 
       <link name="walls">
-        <!-- Trunk walls: inner width 1.5m, wall center offset = 0.75 + 0.075 = 0.825 -->
+        <!-- Trunk walls: inner width 1.5m, wall center offset = 0.75 + 0.075 = 0.825.
+             Extended to 7.0m (y∈[-0.5, 6.5]) for continuous corridor at robot spawn. -->
         <collision name="trunk_left_collision">
-          <pose>-0.825 3.5 1.0 0 0 0</pose>
+          <pose>-0.825 3.0 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 6.0 2.0</size>
+              <size>0.15 7.0 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="trunk_left_visual">
-          <pose>-0.825 3.5 1.0 0 0 0</pose>
+          <pose>-0.825 3.0 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 6.0 2.0</size>
+              <size>0.15 7.0 2.0</size>
             </box>
           </geometry>
           <material>
@@ -75,18 +76,18 @@
         </visual>
 
         <collision name="trunk_right_collision">
-          <pose>0.825 3.5 1.0 0 0 0</pose>
+          <pose>0.825 3.0 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 6.0 2.0</size>
+              <size>0.15 7.0 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="trunk_right_visual">
-          <pose>0.825 3.5 1.0 0 0 0</pose>
+          <pose>0.825 3.0 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 6.0 2.0</size>
+              <size>0.15 7.0 2.0</size>
             </box>
           </geometry>
           <material>
