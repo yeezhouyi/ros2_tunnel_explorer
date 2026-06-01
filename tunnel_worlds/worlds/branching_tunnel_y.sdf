@@ -53,20 +53,20 @@
 
       <link name="walls">
         <!-- Trunk walls: inner width 1.5m, wall center offset = 0.75 + 0.075 = 0.825.
-             Extended to 7.0m (y∈[-0.5, 6.5]) for continuous corridor at robot spawn. -->
+             Extended to 8.0m (y∈[-0.5, 7.5]) to overlap branch walls at junction. -->
         <collision name="trunk_left_collision">
-          <pose>-0.825 3.0 1.0 0 0 0</pose>
+          <pose>-0.825 3.5 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 7.0 2.0</size>
+              <size>0.15 8.0 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="trunk_left_visual">
-          <pose>-0.825 3.0 1.0 0 0 0</pose>
+          <pose>-0.825 3.5 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 7.0 2.0</size>
+              <size>0.15 8.0 2.0</size>
             </box>
           </geometry>
           <material>
@@ -76,18 +76,18 @@
         </visual>
 
         <collision name="trunk_right_collision">
-          <pose>0.825 3.0 1.0 0 0 0</pose>
+          <pose>0.825 3.5 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 7.0 2.0</size>
+              <size>0.15 8.0 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="trunk_right_visual">
-          <pose>0.825 3.0 1.0 0 0 0</pose>
+          <pose>0.825 3.5 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 7.0 2.0</size>
+              <size>0.15 8.0 2.0</size>
             </box>
           </geometry>
           <material>
@@ -120,12 +120,12 @@
 
         <!-- Left branch, centerline from junction (0, 6.5), yaw = 120 deg = 2.094 rad.
              Wall centers are offset +/- 0.825m normal to the branch centerline.
-             Segment length is 5.2m for slight overlap at the junction. -->
+             Extended to 6.5m to overlap trunk walls at junction. -->
         <collision name="left_branch_outer_collision">
           <pose>-2.014 8.339 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
         </collision>
@@ -133,7 +133,7 @@
           <pose>-2.014 8.339 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
           <material>
@@ -146,7 +146,7 @@
           <pose>-0.586 9.164 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
         </collision>
@@ -154,7 +154,7 @@
           <pose>-0.586 9.164 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
           <material>
@@ -168,7 +168,7 @@
           <pose>0.586 9.164 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
         </collision>
@@ -176,7 +176,7 @@
           <pose>0.586 9.164 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
           <material>
@@ -189,7 +189,7 @@
           <pose>2.014 8.339 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
         </collision>
@@ -197,7 +197,7 @@
           <pose>2.014 8.339 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
-              <size>5.2 0.15 2.0</size>
+              <size>6.5 0.15 2.0</size>
             </box>
           </geometry>
           <material>
@@ -208,7 +208,7 @@
 
         <!-- Branch end caps: closed ends so frontiers have clean termination. -->
         <collision name="left_branch_end_collision">
-          <pose>-2.5 10.83 1.0 0 0 2.094395</pose>
+          <pose>-2.925 11.567 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
               <size>0.15 1.8 2.0</size>
@@ -216,7 +216,7 @@
           </geometry>
         </collision>
         <visual name="left_branch_end_visual">
-          <pose>-2.5 10.83 1.0 0 0 2.094395</pose>
+          <pose>-2.925 11.567 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
               <size>0.15 1.8 2.0</size>
@@ -229,7 +229,7 @@
         </visual>
 
         <collision name="right_branch_end_collision">
-          <pose>2.5 10.83 1.0 0 0 1.047198</pose>
+          <pose>2.925 11.567 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
               <size>0.15 1.8 2.0</size>
@@ -237,7 +237,7 @@
           </geometry>
         </collision>
         <visual name="right_branch_end_visual">
-          <pose>2.5 10.83 1.0 0 0 1.047198</pose>
+          <pose>2.925 11.567 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
               <size>0.15 1.8 2.0</size>
