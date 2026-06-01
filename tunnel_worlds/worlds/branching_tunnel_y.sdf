@@ -52,21 +52,22 @@
       <pose>0 0 0 0 0 0</pose>
 
       <link name="walls">
-        <!-- Trunk walls: inner width 2.0m, wall center offset = 1.0 + 0.075 = 1.075.
-             Extended to 8.0m (y∈[-0.5, 7.5]) to overlap branch walls at junction. -->
-        <collision name="trunk_left_collision">
-          <pose>-1.075 3.5 1.0 0 0 0</pose>
+        <!-- Trunk side slabs: thick solid blocks so only the 2.0m corridor
+             interior (x ∈ [-1.0, 1.0]) is free space. Any lidar leakage past
+             the corridor boundary hits solid material immediately. -->
+        <collision name="trunk_left_slab_collision">
+          <pose>-2.25 3.25 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 8.0 2.0</size>
+              <size>2.5 8.5 2.0</size>
             </box>
           </geometry>
         </collision>
-        <visual name="trunk_left_visual">
-          <pose>-1.075 3.5 1.0 0 0 0</pose>
+        <visual name="trunk_left_slab_visual">
+          <pose>-2.25 3.25 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 8.0 2.0</size>
+              <size>2.5 8.5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -75,19 +76,19 @@
           </material>
         </visual>
 
-        <collision name="trunk_right_collision">
-          <pose>1.075 3.5 1.0 0 0 0</pose>
+        <collision name="trunk_right_slab_collision">
+          <pose>2.25 3.25 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 8.0 2.0</size>
+              <size>2.5 8.5 2.0</size>
             </box>
           </geometry>
         </collision>
-        <visual name="trunk_right_visual">
-          <pose>1.075 3.5 1.0 0 0 0</pose>
+        <visual name="trunk_right_slab_visual">
+          <pose>2.25 3.25 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 8.0 2.0</size>
+              <size>2.5 8.5 2.0</size>
             </box>
           </geometry>
           <material>
@@ -96,20 +97,21 @@
           </material>
         </visual>
 
-        <!-- Back wall at y=-0.5 (shifted from y=0.5 to give robot spawn costmap buffer) -->
+        <!-- Back wall at y=-1.0 (moved from y=-0.5 for extra spawn costmap buffer).
+             Sized to just cover trunk width (2.5m spans x∈[-1.25, 1.25]). -->
         <collision name="back_wall_collision">
-          <pose>0 -0.5 1.0 0 0 0</pose>
+          <pose>0 -1.0 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>7.0 0.15 2.0</size>
+              <size>2.5 0.15 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="back_wall_visual">
-          <pose>0 -0.5 1.0 0 0 0</pose>
+          <pose>0 -1.0 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>7.0 0.15 2.0</size>
+              <size>2.5 0.15 2.0</size>
             </box>
           </geometry>
           <material>
@@ -118,22 +120,21 @@
           </material>
         </visual>
 
-        <!-- Left branch, centerline from junction (0, 6.5), yaw = 120 deg = 2.094 rad.
-             Wall centers are offset +/- 1.075m normal to the branch centerline (2.0m corridor).
-             Extended to 6.5m to overlap trunk walls at junction. -->
+        <!-- Left branch outer thick slab: inner face at corridor boundary,
+             extends 2.0m outward so exterior space is solid, not navigable. -->
         <collision name="left_branch_outer_collision">
-          <pose>-2.231 8.214 1.0 0 0 2.094395</pose>
+          <pose>-3.032 7.752 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
-              <size>6.5 0.15 2.0</size>
+              <size>6.5 2.0 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="left_branch_outer_visual">
-          <pose>-2.231 8.214 1.0 0 0 2.094395</pose>
+          <pose>-3.032 7.752 1.0 0 0 2.094395</pose>
           <geometry>
             <box>
-              <size>6.5 0.15 2.0</size>
+              <size>6.5 2.0 2.0</size>
             </box>
           </geometry>
           <material>
@@ -186,18 +187,18 @@
         </visual>
 
         <collision name="right_branch_outer_collision">
-          <pose>2.231 8.214 1.0 0 0 1.047198</pose>
+          <pose>3.032 7.752 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
-              <size>6.5 0.15 2.0</size>
+              <size>6.5 2.0 2.0</size>
             </box>
           </geometry>
         </collision>
         <visual name="right_branch_outer_visual">
-          <pose>2.231 8.214 1.0 0 0 1.047198</pose>
+          <pose>3.032 7.752 1.0 0 0 1.047198</pose>
           <geometry>
             <box>
-              <size>6.5 0.15 2.0</size>
+              <size>6.5 2.0 2.0</size>
             </box>
           </geometry>
           <material>
@@ -293,62 +294,22 @@
             <diffuse>0.6 0.6 0.6 1</diffuse>
           </material>
         </visual>
-        <!-- Perimeter enclosure: blocks lidar view of exterior beyond Y-tunnel -->
-        <collision name="perimeter_left_collision">
-          <pose>-3.5 6.0 1.0 0 0 0</pose>
+        <!-- Central wedge block: fills the triangular gap between the two branch
+             inner walls above the junction, preventing lidar from seeing through
+             the bifurcation to exterior space. -->
+        <collision name="central_wedge_collision">
+          <pose>0 9.5 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 13.0 2.0</size>
+              <size>0.5 2.0 2.0</size>
             </box>
           </geometry>
         </collision>
-        <visual name="perimeter_left_visual">
-          <pose>-3.5 6.0 1.0 0 0 0</pose>
+        <visual name="central_wedge_visual">
+          <pose>0 9.5 1.0 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.15 13.0 2.0</size>
-            </box>
-          </geometry>
-          <material>
-            <ambient>0.6 0.6 0.6 1</ambient>
-            <diffuse>0.6 0.6 0.6 1</diffuse>
-          </material>
-        </visual>
-
-        <collision name="perimeter_right_collision">
-          <pose>3.5 6.0 1.0 0 0 0</pose>
-          <geometry>
-            <box>
-              <size>0.15 13.0 2.0</size>
-            </box>
-          </geometry>
-        </collision>
-        <visual name="perimeter_right_visual">
-          <pose>3.5 6.0 1.0 0 0 0</pose>
-          <geometry>
-            <box>
-              <size>0.15 13.0 2.0</size>
-            </box>
-          </geometry>
-          <material>
-            <ambient>0.6 0.6 0.6 1</ambient>
-            <diffuse>0.6 0.6 0.6 1</diffuse>
-          </material>
-        </visual>
-
-        <collision name="perimeter_top_collision">
-          <pose>0 12.5 1.0 0 0 0</pose>
-          <geometry>
-            <box>
-              <size>7.0 0.15 2.0</size>
-            </box>
-          </geometry>
-        </collision>
-        <visual name="perimeter_top_visual">
-          <pose>0 12.5 1.0 0 0 0</pose>
-          <geometry>
-            <box>
-              <size>7.0 0.15 2.0</size>
+              <size>0.5 2.0 2.0</size>
             </box>
           </geometry>
           <material>
