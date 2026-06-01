@@ -34,6 +34,7 @@
 #   --runtime-retries N          Number of runtime retries for STALLED/STARTUP_FAILED (default: 0)
 #   --inject-stall-after-seconds SEC  Inject stall for testing (default: 0, disabled)
 #   --explorer-params-file PATH  Frontier explorer YAML params file (default: installed frontier_explorer_params.yaml)
+#   --world PATH      Gazebo world SDF/SDF.xacro file (default: launch file default = tb3_sandbox.sdf.xacro)
 #   --headless        Run Gazebo headless (default: true)
 #   --help            Show this message
 #
@@ -85,6 +86,7 @@ STALL_TIMEOUT_SECONDS=90
 RUNTIME_RETRIES=0
 INJECT_STALL_AFTER_SECONDS=0
 EXPLORER_PARAMS_FILE=""
+WORLD=""
 
 # ── Parse arguments ────────────────────────────────────────────────────
 
@@ -100,6 +102,7 @@ while [ $# -gt 0 ]; do
     --runtime-retries) RUNTIME_RETRIES="$2"; shift 2 ;;
     --inject-stall-after-seconds) INJECT_STALL_AFTER_SECONDS="$2"; shift 2 ;;
     --explorer-params-file) EXPLORER_PARAMS_FILE="$2"; shift 2 ;;
+    --world)   WORLD="$2";   shift 2 ;;
     --headless)   HEADLESS="$2";   shift 2 ;;
     --help)
       sed -n 's/^# //p; /^$/q' "$0" | head -80
@@ -313,11 +316,15 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
 
     # Launch simulation
     tmux kill-session -t "${STAGE_SESSION}" 2>/dev/null || true
+    SIM_LAUNCH_ARGS="headless:=${HEADLESS} use_composition:=False params_file:=${PARAMS_FILE}"
+    if [[ -n "${WORLD}" ]]; then
+      SIM_LAUNCH_ARGS="${SIM_LAUNCH_ARGS} world:=${WORLD}"
+    fi
+
     tmux new-session -d -s "${STAGE_SESSION}" \
       "bash -c 'source /opt/ros/jazzy/setup.bash && source ${REPO_DIR}/install/setup.bash && \
         ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py \
-          headless:=${HEADLESS} use_composition:=False \
-          params_file:=${PARAMS_FILE} 2>&1 | tee ${SIM_LOG}'"
+          ${SIM_LAUNCH_ARGS} 2>&1 | tee ${SIM_LOG}'"
 
     echo "[${SCRIPT_NAME}] Simulation starting in tmux session '${STAGE_SESSION}'..."
     echo "[${SCRIPT_NAME}] Waiting ${WAIT_TIME}s for Nav2 lifecycle startup (attempt ${attempt})..."

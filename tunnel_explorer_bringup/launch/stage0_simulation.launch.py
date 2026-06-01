@@ -39,7 +39,12 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_bringup = get_package_share_directory('tunnel_explorer_bringup')
     pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
+    pkg_tb3_sim = get_package_share_directory('nav2_minimal_tb3_sim')
     launch_dir = os.path.join(pkg_nav2_bringup, 'launch')
+
+    default_world = os.path.join(
+        pkg_tb3_sim, 'worlds', 'tb3_sandbox.sdf.xacro',
+    )
 
     # Arguments
     rviz_arg = DeclareLaunchArgument(
@@ -58,6 +63,11 @@ def generate_launch_description():
         'params_file', default_value=os.path.join(pkg_bringup, 'config', 'nav2_params.yaml'),
         description='Path to Nav2 params YAML file'
     )
+    world_arg = DeclareLaunchArgument(
+        'world',
+        default_value=default_world,
+        description='Path to Gazebo world SDF/SDF.xacro file',
+    )
 
     # Nav2 all-in-one TB3 simulation
     # We always disable the built-in RViz in tb3_simulation; launch our own below.
@@ -73,6 +83,7 @@ def generate_launch_description():
             'headless': LaunchConfiguration('headless'),
             'use_rviz': 'False',
             'use_composition': LaunchConfiguration('use_composition'),
+            'world': LaunchConfiguration('world'),
         }.items(),
     )
 
@@ -99,6 +110,7 @@ def generate_launch_description():
         headless_arg,
         use_composition_arg,
         params_file_arg,
+        world_arg,
         tb3_sim,
         rviz_node,
     ])
