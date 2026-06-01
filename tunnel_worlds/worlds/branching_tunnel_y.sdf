@@ -95,9 +95,9 @@
           </material>
         </visual>
 
-        <!-- Back wall at y=0.5 -->
+        <!-- Back wall at y=-0.5 (shifted from y=0.5 to give robot spawn costmap buffer) -->
         <collision name="back_wall_collision">
-          <pose>0 0.5 1.0 0 0 0</pose>
+          <pose>0 -0.5 1.0 0 0 0</pose>
           <geometry>
             <box>
               <size>1.8 0.15 2.0</size>
@@ -105,7 +105,7 @@
           </geometry>
         </collision>
         <visual name="back_wall_visual">
-          <pose>0 0.5 1.0 0 0 0</pose>
+          <pose>0 -0.5 1.0 0 0 0</pose>
           <geometry>
             <box>
               <size>1.8 0.15 2.0</size>
