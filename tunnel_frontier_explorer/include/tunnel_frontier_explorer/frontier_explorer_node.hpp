@@ -33,6 +33,8 @@
 #include "tunnel_frontier_explorer/frontier_cluster.hpp"
 #include "tunnel_frontier_explorer/frontier_detector.hpp"
 #include "tunnel_frontier_explorer/frontier_goal_selector.hpp"
+#include "tunnel_frontier_explorer/frontier_scorer.hpp"
+#include "tunnel_frontier_explorer/frontier_visit_history.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -96,6 +98,8 @@ private:
   FrontierDetector detector_;
   FrontierBlacklist blacklist_;
   FrontierGoalSelector goal_selector_;
+  FrontierScorer scorer_;
+  FrontierVisitHistory visit_history_;
 
   // ── Parameters ───────────────────────────────────────────────────────
   double exploration_period_seconds_;
@@ -114,6 +118,19 @@ private:
   std::string robot_base_frame_;
   std::string action_server_name_;
   std::string marker_topic_;
+
+  // Stage 2B parameters
+  std::string selection_strategy_;
+  double information_gain_radius_meters_;
+  double revisit_radius_meters_;
+  int max_revisit_count_;
+  double weight_information_gain_;
+  double weight_distance_;
+  double weight_revisit_;
+
+  // ── Scored frontier markers ──────────────────────────────────────────
+  void publishScoredFrontierMarkers(
+    const std::vector<ScoredGoal> & scored);
 
   // ── State ────────────────────────────────────────────────────────────
   ExplorationState state_ = ExplorationState::WAITING_FOR_MAP;

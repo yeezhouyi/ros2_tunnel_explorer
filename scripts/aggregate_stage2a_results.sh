@@ -277,6 +277,23 @@ d = json.load(sys.stdin)
 print(len(d.get('excluded_table', [])))
 " 2>/dev/null || echo "0")
 
+# Extract selection_strategy from first completed/timeout run's JSON.
+AGGREGATED_STRATEGY="nearest"
+for run_dir in $(ls -d "${RESULTS_DIR}"/run_* 2>/dev/null | sort); do
+  attempt_dir=$(ls -d "${run_dir}"/attempt_* 2>/dev/null | sort | tail -1)
+  if [ -n "${attempt_dir}" ] && [ -f "${attempt_dir}/benchmark_results.json" ]; then
+    candidate=$(python3 -c "
+import json
+with open('${attempt_dir}/benchmark_results.json') as f:
+    print(json.load(f).get('selection_strategy', 'nearest'))
+" 2>/dev/null || echo "")
+    if [ -n "${candidate}" ]; then
+      AGGREGATED_STRATEGY="${candidate}"
+      break
+    fi
+  fi
+done
+
 # Completion rate (avoid division by zero)
 if [ "${ALGORITHM_TOTAL}" -gt 0 ] 2>/dev/null; then
   COMPLETION_RATE=$((100 * COMPLETION_COUNT / ALGORITHM_TOTAL))
@@ -306,6 +323,7 @@ OUTPUT="${RESULTS_DIR}/aggregated_results.md"
   echo "- Algorithm COMPLETED: ${COMPLETION_COUNT}"
   echo "- Algorithm TIMEOUT: ${TIMEOUT_COUNT}"
   echo "- Completion rate: ${COMPLETION_RATE}%"
+  echo "- Strategy: ${AGGREGATED_STRATEGY:-nearest}"
   echo ""
 
   # ─────── Algorithm Outcomes ─────────────────────────────────────────────

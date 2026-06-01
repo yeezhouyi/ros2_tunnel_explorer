@@ -11,6 +11,7 @@ install(DIRECTORY scenarios bags config
 
 install(PROGRAMS scripts/record_stage0_metrics.py
           scripts/run_navigation_smoke_test.py
+          scripts/analyze_stage2b_outlier.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

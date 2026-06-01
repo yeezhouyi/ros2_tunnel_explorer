@@ -12,6 +12,9 @@
 | 1A | Frontier Algorithms (detector + blacklist + goal selector) | **PASS** |
 | 1B | ROS2 Node Build & Unit Tests (24+ tests) | **PASS** |
 | **1C** | **Nearest-Frontier Closed-Loop Integration** | **PASS** |
+| **2A** | **Nearest-Frontier Baseline Benchmark** | **PASS** — 5 runs, 80% completion, TTC median 281.5 s |
+| **2B** | **Information Gain + Revisit Penalty v1** | **PASS** — 5 runs, 100% completion, TTC median 156.0 s (−44.6%), revisit median 0% (−100%) |
+| **2C** | **Robustness Analysis** | **READY** — outlier diagnosis, parameter sensitivity, multi-scene validation |
 
 ### Stage 1C Baseline Metrics
 
@@ -154,6 +157,7 @@ Add a MarkerArray display in RViz subscribed to `/frontier_markers`:
 | `selected_goal` | Red | Sphere | Currently selected navigation goal |
 | `blacklisted` | Grey | Sphere | Temporarily forbidden failed goals |
 | `too_close_frontiers` | Yellow | Points | Candidate goals within `min_goal_distance_meters` (filtered by FrontierGoalSelector) |
+| `scored_frontiers` | Red→Green | Sphere List | Scored candidates (`information_gain_revisit` strategy), size ∝ score |
 
 ### Parameters
 
@@ -171,6 +175,13 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 | `blacklist_timeout_seconds` | 60.0 | Blacklist expiry time |
 | `orient_goal_toward_frontier` | true | Face the robot toward the goal |
 | `min_goal_distance_meters` | 0.50 | Minimum distance from robot to goal; prevents false-success within Nav2 `xy_goal_tolerance` |
+| `selection_strategy` | `nearest` | Goal selection: `nearest` (Stage 2A baseline) or `information_gain_revisit` (Stage 2B) |
+| `information_gain_radius_meters` | 0.75 | Radius (m) to count unknown cells around each candidate goal |
+| `revisit_radius_meters` | 0.50 | Radius (m) for detecting previously visited areas |
+| `max_revisit_count` | 3 | Clamp for revisit count (prevents extreme penalty) |
+| `weight_information_gain` | 1.0 | Score weight for normalised information gain |
+| `weight_distance` | 1.0 | Score weight for normalised distance (subtracted) |
+| `weight_revisit` | 1.5 | Score weight for normalised revisit penalty (subtracted) |
 
 ### Architecture
 
@@ -181,9 +192,16 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 - `FrontierGoalSelector`: Pure C++ class (no ROS deps) that enforces
   `min_goal_distance_meters` from robot to goal; searches cluster for
   alternative free cells when the representative is too close, preventing
-  false-success cycles caused by Nav2 `xy_goal_tolerance`.
+  false-success cycles caused by Nav2 `xy_goal_tolerance`.  Also provides
+  `selectAll()` to return all distance-filtered candidates for external scoring.
+- `FrontierScorer` (Stage 2B): Pure C++ class (no ROS deps) that scores candidate
+  goals by information gain (unknown cells within circular radius), distance,
+  and revisit penalty.  Supports deterministic tie-breaking.
+- `FrontierVisitHistory` (Stage 2B): Pure C++ class (no ROS deps) that records
+  goals accepted by the Nav2 action server for use in revisit penalty calculation.
 - `TunnelFrontierExplorerNode`: ROS2 node with 6-state machine
   (WAITING_FOR_MAP → WAITING_FOR_NAV2 → IDLE → NAVIGATING → COOLDOWN → COMPLETED).
+  Supports `nearest` and `information_gain_revisit` selection strategies.
 
 ## Packages
 
@@ -280,11 +298,67 @@ For verifying the STALLED detection path:
 Expected: run enters STALLED at ~65 s (20 + 45, with ±5 s monitor jitter).
 This is a **test-only** feature. Formal benchmarks must not use `--inject-stall-after-seconds`.
 
+## Quick Start (Stage 2B: Information Gain + Revisit Penalty)
+
+Stage 2B adds information gain weighting and revisit penalty to frontier goal
+selection.  **PASS** — 5-run A/B benchmark vs Stage 2A baseline shows:
+
+| Metric | 2A (nearest) | 2B (info+revisit) | Change |
+|--------|:------------:|:-----------------:|:------:|
+| Completion rate | 80 % | **100 %** | +25 % |
+| TTC median | 281.5 s | **156.0 s** | −44.6 % |
+| Revisit rate median | 20 % | **0 %** | −100 % |
+| Nav goal success | 97.7 % | **100 %** | +2.3 pp |
+
+See [docs/stage2b_information_gain_revisit_results.md](docs/stage2b_information_gain_revisit_results.md).
+
+Use the `information_gain_revisit` strategy via a separate params file.
+
+### Launch with Stage 2B strategy
+
+```bash
+ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py \
+  params_file:=<path-to-install>/config/frontier_explorer_params_info_revisit.yaml
+```
+
+The explorer node will log scoring details for each dispatched goal:
+
+```
+Goal: (1.23, 4.56) dist=2.34 gain=42(raw)/3.76(tr)/0.85(norm) revisit=0(raw)/0(cl)/0.00(norm) score=0.85 [5 cand]
+```
+
+### Stage 2A baseline (unchanged)
+
+```bash
+ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py
+```
+
+This still uses the default `nearest` strategy — exactly the same behaviour as
+Stage 2A.
+
+### Stage 2B benchmark variant
+
+```bash
+./scripts/run_stage2a_benchmark.sh \
+  --output-dir ~/stage2b_benchmark \
+  --duration 600 \
+  --run-id 01 \
+  --stop-on-completed true \
+  --completed-grace-seconds 20 \
+  --stall-timeout-seconds 90 \
+  --explorer-params-file <path-to-install>/config/frontier_explorer_params_info_revisit.yaml
+```
+
+The benchmark records `selection_strategy`, all scoring parameters, and a
+SHA-256 hash of the params file in each run's `benchmark_results.json`.
+
 ## Documentation
 
 - [Environment Feasibility](docs/environment_feasibility.md) — Stage 0 verification
 - [DWB Turn Diagnosis](docs/stage0b_dwb_turn_diagnosis.md) — Stage 0B-D diagnostic plan
 - [Stage 1C Smoke Results](docs/stage1c_smoke_results.md) — nearest-frontier baseline verification
+- [Stage 2A Baseline Results](docs/stage2a_nearest_frontier_baseline_results.md) — 5-run nearest-frontier baseline
+- [Stage 2B Design](docs/stage2b_information_gain_revisit_design.md) — information gain + revisit penalty scoring
 - [ROS2 Jazzy Compatibility](docs/jazzy_compatibility.md)
 
 ## WSL2 Restart Checklist

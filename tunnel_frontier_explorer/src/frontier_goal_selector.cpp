@@ -45,46 +45,47 @@ Point2D FrontierGoalSelector::gridToWorld(
   return p;
 }
 
-// ── select ────────────────────────────────────────────────────────────────
+// ── collectAccepted (shared helper) ─────────────────────────────────────────
 
-GoalSelectionResult FrontierGoalSelector::select(
+namespace {
+
+/// Per-cluster filtering: check distance, find alternative if needed.
+/// Modifies cluster representative in-place for accepted clusters.
+void collectAccepted(
   std::vector<FrontierCluster> & clusters,
   const GridMap & map,
-  const Point2D & robot_position) const
+  const Point2D & robot_position,
+  double min_goal_distance_meters,
+  std::vector<FrontierCluster *> & accepted,
+  std::vector<Point2D> & too_close)
 {
-  GoalSelectionResult result;
-  std::vector<FrontierCluster *> candidates;
+  const double min_dist_sq =
+    min_goal_distance_meters * min_goal_distance_meters;
 
   for (auto & cluster : clusters) {
-    // Compute distance from robot to current representative.
     const double dx = cluster.representative_world.x - robot_position.x;
     const double dy = cluster.representative_world.y - robot_position.y;
     const double dist = std::sqrt(dx * dx + dy * dy);
 
-    if (dist >= config_.min_goal_distance_meters) {
-      // Representative is already far enough — use as-is.
+    if (dist >= min_goal_distance_meters) {
       cluster.goal_distance_to_robot = dist;
-      candidates.push_back(&cluster);
+      accepted.push_back(&cluster);
       continue;
     }
 
-    // Representative is too close — search for an alternative cell within
-    // this cluster that is >= min_goal_distance_meters away.
+    // Representative too close — search for alternative cell.
     double best_sq_dist = std::numeric_limits<double>::max();
     GridCell best_cell;
     Point2D best_world;
     bool found = false;
 
     for (const auto & cell : cluster.cells) {
-      const Point2D world = gridToWorld(map, cell.row, cell.col);
+      const Point2D world = FrontierGoalSelector::gridToWorld(map, cell.row, cell.col);
       const double cd_x = world.x - robot_position.x;
       const double cd_y = world.y - robot_position.y;
       const double cell_dist_sq = cd_x * cd_x + cd_y * cd_y;
 
-      if (cell_dist_sq >= config_.min_goal_distance_meters *
-        config_.min_goal_distance_meters)
-      {
-        // This cell is far enough — prefer the one closest to centroid.
+      if (cell_dist_sq >= min_dist_sq) {
         const double cdx = world.x - cluster.centroid_world.x;
         const double cdy = world.y - cluster.centroid_world.y;
         const double d2 = cdx * cdx + cdy * cdy;
@@ -103,12 +104,28 @@ GoalSelectionResult FrontierGoalSelector::select(
       const double gdx = best_world.x - robot_position.x;
       const double gdy = best_world.y - robot_position.y;
       cluster.goal_distance_to_robot = std::sqrt(gdx * gdx + gdy * gdy);
-      candidates.push_back(&cluster);
+      accepted.push_back(&cluster);
     } else {
-      // Entire cluster is too close — reject.
-      result.too_close_goals.push_back(cluster.representative_world);
+      too_close.push_back(cluster.representative_world);
     }
   }
+}
+
+}  // namespace
+
+// ── select ────────────────────────────────────────────────────────────────
+
+GoalSelectionResult FrontierGoalSelector::select(
+  std::vector<FrontierCluster> & clusters,
+  const GridMap & map,
+  const Point2D & robot_position) const
+{
+  GoalSelectionResult result;
+  std::vector<FrontierCluster *> candidates;
+
+  collectAccepted(
+    clusters, map, robot_position, config_.min_goal_distance_meters,
+    candidates, result.too_close_goals);
 
   if (candidates.empty()) {
     result.selected = std::nullopt;
@@ -122,6 +139,34 @@ GoalSelectionResult FrontierGoalSelector::select(
     });
 
   result.selected = *candidates.front();
+  return result;
+}
+
+// ── selectAll ─────────────────────────────────────────────────────────────
+
+AllCandidatesResult FrontierGoalSelector::selectAll(
+  std::vector<FrontierCluster> & clusters,
+  const GridMap & map,
+  const Point2D & robot_position) const
+{
+  AllCandidatesResult result;
+  std::vector<FrontierCluster *> accepted_ptrs;
+
+  collectAccepted(
+    clusters, map, robot_position, config_.min_goal_distance_meters,
+    accepted_ptrs, result.too_close_goals);
+
+  // Copy all accepted clusters, sorted by distance.
+  std::sort(accepted_ptrs.begin(), accepted_ptrs.end(),
+    [](const FrontierCluster * a, const FrontierCluster * b) {
+      return a->goal_distance_to_robot < b->goal_distance_to_robot;
+    });
+
+  result.candidates.reserve(accepted_ptrs.size());
+  for (const auto * ptr : accepted_ptrs) {
+    result.candidates.push_back(*ptr);
+  }
+
   return result;
 }
 

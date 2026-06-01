@@ -32,6 +32,8 @@
 #   --completed-grace-seconds SEC  Stable COMPLETED grace window (default: 20)
 #   --stall-timeout-seconds SEC  Stall timeout in seconds (default: 90)
 #   --runtime-retries N          Number of runtime retries for STALLED/STARTUP_FAILED (default: 0)
+#   --inject-stall-after-seconds SEC  Inject stall for testing (default: 0, disabled)
+#   --explorer-params-file PATH  Frontier explorer YAML params file (default: installed frontier_explorer_params.yaml)
 #   --headless        Run Gazebo headless (default: true)
 #   --help            Show this message
 #
@@ -82,6 +84,7 @@ COMPLETED_GRACE_SECONDS=20
 STALL_TIMEOUT_SECONDS=90
 RUNTIME_RETRIES=0
 INJECT_STALL_AFTER_SECONDS=0
+EXPLORER_PARAMS_FILE=""
 
 # ── Parse arguments ────────────────────────────────────────────────────
 
@@ -96,6 +99,7 @@ while [ $# -gt 0 ]; do
     --stall-timeout-seconds) STALL_TIMEOUT_SECONDS="$2"; shift 2 ;;
     --runtime-retries) RUNTIME_RETRIES="$2"; shift 2 ;;
     --inject-stall-after-seconds) INJECT_STALL_AFTER_SECONDS="$2"; shift 2 ;;
+    --explorer-params-file) EXPLORER_PARAMS_FILE="$2"; shift 2 ;;
     --headless)   HEADLESS="$2";   shift 2 ;;
     --help)
       sed -n 's/^# //p; /^$/q' "$0" | head -80
@@ -120,6 +124,11 @@ fi
 
 RUN_DIR="${OUTPUT_DIR}/run_${RUN_ID}"
 PARAMS_FILE="${REPO_DIR}/install/tunnel_explorer_bringup/share/tunnel_explorer_bringup/config/nav2_params_rotation_shim.yaml"
+
+# Resolve default explorer params file.
+if [ -z "${EXPLORER_PARAMS_FILE}" ]; then
+  EXPLORER_PARAMS_FILE="${REPO_DIR}/install/tunnel_frontier_explorer/share/tunnel_frontier_explorer/config/frontier_explorer_params.yaml"
+fi
 STAGE_SESSION="nav2_stage0"
 EXPLORER_SESSION="frontier_explorer"
 
@@ -353,6 +362,7 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
     tmux new-session -d -s "${EXPLORER_SESSION}" \
       "bash -c 'source /opt/ros/jazzy/setup.bash && source ${REPO_DIR}/install/setup.bash && \
         stdbuf -oL -eL ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py \
+          params_file:=${EXPLORER_PARAMS_FILE} \
         2>&1 | tee ${EXPLORER_LOG}'"
 
     sleep 5
@@ -751,6 +761,14 @@ RESULTS
 
   # ── Write structured JSON results ──────────────────────────────────
   JSON_FILE="${ATTEMPT_DIR}/benchmark_results.json"
+  # Compute params file hash and extract selection strategy.
+  if [ -f "${EXPLORER_PARAMS_FILE}" ]; then
+    EXPLORER_PARAMS_SHA256=$(sha256sum "${EXPLORER_PARAMS_FILE}" | cut -d' ' -f1)
+    EXPLORER_SELECTION_STRATEGY=$(grep -oP 'selection_strategy:\s*\K\S+' "${EXPLORER_PARAMS_FILE}" 2>/dev/null || echo "nearest")
+  else
+    EXPLORER_PARAMS_SHA256="file_not_found"
+    EXPLORER_SELECTION_STRATEGY="unknown"
+  fi
   JSON_SCRIPT=$(mktemp /tmp/benchmark_json_XXXXXXXX.py)
   cat > "${JSON_SCRIPT}" << JSONPYEOF
 import json
@@ -775,7 +793,10 @@ data = {
     'goals_aborted': ${ABORTED_LINES:-0},
     'unique_goal_bins': ${UNIQUE_BINS:-0},
     'revisit_rate': ${REVISIT_RATE:-0.0},
-    'navigation_goal_success_rate': ${REACH_RATE:-0.0}
+    'navigation_goal_success_rate': ${REACH_RATE:-0.0},
+    'explorer_params_file': '${EXPLORER_PARAMS_FILE}',
+    'explorer_params_sha256': '${EXPLORER_PARAMS_SHA256}',
+    'selection_strategy': '${EXPLORER_SELECTION_STRATEGY}'
 }
 with open('${JSON_FILE}', 'w') as f:
     json.dump(data, f, indent=2)

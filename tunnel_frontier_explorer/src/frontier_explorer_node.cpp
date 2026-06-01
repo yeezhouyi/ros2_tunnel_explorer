@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -74,6 +75,55 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     "orient_goal_toward_frontier", true);
   min_goal_distance_meters_ = declare_parameter<double>(
     "min_goal_distance_meters", 0.50);
+
+  // -- Stage 2B parameters --------------------------------------------------
+  selection_strategy_ = declare_parameter<std::string>(
+    "selection_strategy", "nearest");
+  information_gain_radius_meters_ = declare_parameter<double>(
+    "information_gain_radius_meters", 0.75);
+  revisit_radius_meters_ = declare_parameter<double>(
+    "revisit_radius_meters", 0.50);
+  max_revisit_count_ = declare_parameter<int>(
+    "max_revisit_count", 3);
+  weight_information_gain_ = declare_parameter<double>(
+    "weight_information_gain", 1.0);
+  weight_distance_ = declare_parameter<double>(
+    "weight_distance", 1.0);
+  weight_revisit_ = declare_parameter<double>(
+    "weight_revisit", 1.5);
+
+  // Validate selection_strategy.
+  if (selection_strategy_ != "nearest" &&
+    selection_strategy_ != "information_gain_revisit")
+  {
+    RCLCPP_ERROR(
+      get_logger(),
+      "Invalid selection_strategy '%s' -- must be 'nearest' or "
+      "'information_gain_revisit'", selection_strategy_.c_str());
+    throw std::runtime_error("Invalid selection_strategy");
+  }
+
+  // Construct scorer (validates radii/weights internally).
+  {
+    FrontierScorerConfig scorer_cfg;
+    scorer_cfg.information_gain_radius_meters =
+      information_gain_radius_meters_;
+    scorer_cfg.revisit_radius_meters = revisit_radius_meters_;
+    scorer_cfg.max_revisit_count =
+      static_cast<std::size_t>(max_revisit_count_);
+    scorer_cfg.weight_information_gain = weight_information_gain_;
+    scorer_cfg.weight_distance = weight_distance_;
+    scorer_cfg.weight_revisit = weight_revisit_;
+    scorer_ = FrontierScorer(scorer_cfg);
+  }
+
+  if (selection_strategy_ != "nearest") {
+    RCLCPP_INFO(
+      get_logger(),
+      "Stage 2B strategy: %s (gain_w=%.1f dist_w=%.1f revisit_w=%.1f)",
+      selection_strategy_.c_str(),
+      weight_information_gain_, weight_distance_, weight_revisit_);
+  }
 
   // Reconfigure detector with actual parameters.
   FrontierDetectorConfig cfg;
@@ -228,28 +278,98 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         }
         frontier_empty_count_ = 0;
 
-      // Select best goal via FrontierGoalSelector.
-        GoalSelectionResult sel = goal_selector_.select(valid, gm, robot_pose);
+      // Select best goal — strategy-dependent.
+        Point2D goal_pt;
+        std::optional<Point2D> selected_for_marker;
+        std::vector<Point2D> too_close_for_marker;
+        std::vector<ScoredGoal> scored_frontiers;
 
-        if (!sel.selected) {
-          RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
-            "All %zu frontiers within min_goal_distance=%.2f m "
-            "— waiting for map update",
-            valid.size(), min_goal_distance_meters_);
-          publishMarkers(
-            clusters, blacklisted_positions, std::nullopt, sel.too_close_goals);
-          return;
+        if (selection_strategy_ == "information_gain_revisit") {
+          // Phase 1: distance filtering via selectAll()
+          AllCandidatesResult all_sel = goal_selector_.selectAll(
+            valid, gm, robot_pose);
+          too_close_for_marker = all_sel.too_close_goals;
+
+          if (all_sel.candidates.empty()) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu frontiers within min_goal_distance=%.2f m "
+              "— waiting for map update",
+              valid.size(), min_goal_distance_meters_);
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              too_close_for_marker);
+            return;
+          }
+
+          // Phase 2: second blacklist check on final representative_world.
+          const auto steady_now = std::chrono::steady_clock::now();
+          std::vector<FrontierCluster> post_blacklist;
+          for (const auto & c : all_sel.candidates) {
+            if (!blacklist_.contains(c.representative_world, steady_now)) {
+              post_blacklist.push_back(c);
+            }
+          }
+
+          if (post_blacklist.empty()) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu distance-candidates blacklisted after selectAll()"
+              " — waiting for expiry",
+              all_sel.candidates.size());
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              too_close_for_marker);
+            return;
+          }
+
+          // Phase 3: score and rank.
+          scored_frontiers = scorer_.scoreAndRank(
+            post_blacklist, gm, robot_pose, visit_history_);
+          const auto & best = scored_frontiers.front();
+          goal_pt = best.cluster.representative_world;
+          selected_for_marker = goal_pt;
+
+          RCLCPP_INFO(get_logger(),
+            "Goal: (%.2f, %.2f) dist=%.2f "
+            "gain=%zu(raw)/%.2f(tr)/%.3f(norm) "
+            "revisit=%zu(raw)/%zu(cl)/%.3f(norm) "
+            "score=%.4f [%zu cand]",
+            goal_pt.x, goal_pt.y,
+            best.goal_distance_meters,
+            best.raw_information_gain,
+            best.transformed_information_gain,
+            best.normalized_information_gain,
+            best.raw_revisit_count,
+            best.clamped_revisit_count,
+            best.normalized_revisit_penalty,
+            best.score,
+            scored_frontiers.size());
+        } else {
+          // nearest strategy (Stage 2A baseline, unchanged).
+          GoalSelectionResult sel = goal_selector_.select(
+            valid, gm, robot_pose);
+
+          if (!sel.selected) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu frontiers within min_goal_distance=%.2f m "
+              "— waiting for map update",
+              valid.size(), min_goal_distance_meters_);
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              sel.too_close_goals);
+            return;
+          }
+
+          const auto & target = *sel.selected;
+          goal_pt = target.representative_world;
+          selected_for_marker = goal_pt;
+          too_close_for_marker = sel.too_close_goals;
+
+          RCLCPP_INFO(get_logger(),
+            "Goal: (%.2f, %.2f) [%zu cells, centroid=%.1f m, goal=%.1f m]",
+            goal_pt.x, goal_pt.y, target.size(),
+            target.centroid_distance_to_robot,
+            target.goal_distance_to_robot);
         }
-
-      // Use the selected cluster.
-        const auto & target = *sel.selected;
-        const Point2D goal_pt = target.representative_world;
-
-        RCLCPP_INFO(get_logger(),
-        "Goal: (%.2f, %.2f) [%zu cells, centroid=%.1f m, goal=%.1f m]",
-        goal_pt.x, goal_pt.y, target.size(),
-        target.centroid_distance_to_robot,
-        target.goal_distance_to_robot);
 
       // Prepare NavigateToPose goal.
         auto goal_msg = nav2_msgs::action::NavigateToPose::Goal();
@@ -289,7 +409,12 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         transitionTo(ExplorationState::NAVIGATING);
 
         publishMarkers(
-          clusters, blacklisted_positions, goal_pt, sel.too_close_goals);
+          clusters, blacklisted_positions, selected_for_marker,
+          too_close_for_marker);
+
+        if (!scored_frontiers.empty()) {
+          publishScoredFrontierMarkers(scored_frontiers);
+        }
         return;
       }
 
@@ -343,6 +468,11 @@ void TunnelFrontierExplorerNode::goalResponseCallback(
   }
   current_goal_handle_ = handle;
   RCLCPP_INFO(get_logger(), "Goal accepted by Nav2 server");
+
+  // Record in visit history for revisit penalty (info_revisit strategy only).
+  if (selection_strategy_ == "information_gain_revisit" && current_goal_) {
+    visit_history_.recordAcceptedGoal(*current_goal_);
+  }
 }
 
 // ── feedbackCallback ─────────────────────────────────────────────────────
@@ -552,7 +682,72 @@ void TunnelFrontierExplorerNode::publishMarkers(
   marker_pub_->publish(std::move(markers));
 }
 
-// ── transitionTo ─────────────────────────────────────────────────────────
+// -- publishScoredFrontierMarkers -----------------------------------------
+
+void TunnelFrontierExplorerNode::publishScoredFrontierMarkers(
+  const std::vector<ScoredGoal> & scored)
+{
+  visualization_msgs::msg::MarkerArray markers;
+
+  auto make_deleteall = [](const std::string & ns)
+    -> visualization_msgs::msg::Marker
+    {
+      visualization_msgs::msg::Marker m;
+      m.action = visualization_msgs::msg::Marker::DELETEALL;
+      m.ns = ns;
+      return m;
+    };
+
+  markers.markers.push_back(make_deleteall("scored_frontiers"));
+
+  if (!scored.empty()) {
+    double min_score = std::numeric_limits<double>::max();
+    double max_score = std::numeric_limits<double>::lowest();
+    for (const auto & sg : scored) {
+      min_score = std::min(min_score, sg.score);
+      max_score = std::max(max_score, sg.score);
+    }
+    const double score_range = max_score - min_score;
+
+    visualization_msgs::msg::Marker m;
+    m.header.frame_id = global_frame_;
+    m.header.stamp = this->now();
+    m.ns = "scored_frontiers";
+    m.id = 0;
+    m.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+    m.action = visualization_msgs::msg::Marker::ADD;
+    m.pose.orientation.w = 1.0;
+    m.color.a = 0.8;
+
+    for (const auto & sg : scored) {
+      double norm = 0.0;
+      if (score_range > 1e-9) {
+        norm = (sg.score - min_score) / score_range;
+      }
+
+      geometry_msgs::msg::Point p;
+      p.x = sg.cluster.representative_world.x;
+      p.y = sg.cluster.representative_world.y;
+      p.z = 0.0;
+      m.points.push_back(p);
+
+      m.scale.x = 0.12 + norm * 0.18;
+      m.scale.y = 0.12 + norm * 0.18;
+
+      std_msgs::msg::ColorRGBA color;
+      color.a = 0.8;
+      color.r = 1.0 - norm;
+      color.g = norm;
+      color.b = 0.0;
+      m.colors.push_back(color);
+    }
+    markers.markers.push_back(m);
+  }
+
+  marker_pub_->publish(std::move(markers));
+}
+
+// -- transitionTo ----------------------------------------------------------
 
 void TunnelFrontierExplorerNode::transitionTo(ExplorationState new_state)
 {
