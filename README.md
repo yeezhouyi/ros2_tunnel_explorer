@@ -13,8 +13,8 @@
 | 1B | ROS2 Node Build & Unit Tests (24+ tests) | **PASS** |
 | **1C** | **Nearest-Frontier Closed-Loop Integration** | **PASS** |
 | **2A** | **Nearest-Frontier Baseline Benchmark** | **PASS** — 5 runs, 80% completion, TTC median 281.5 s |
-| **2B** | **Information Gain + Revisit Penalty v1** | **PASS** — 5 runs, 100% completion, TTC median 156.0 s (−44.6%), revisit median 0% (−100%) |
-| **2C** | **Robustness Analysis** | **READY** — outlier diagnosis, parameter sensitivity, multi-scene validation |
+| **2B** | **Information Gain + Revisit Penalty v1** | **PASS** — 5 runs, 100% completion, TTC median 174 s (4 formal runs, excl. run_debug), revisit median 0% |
+| **2C** | **Revisit Radius Robustness** | **PASS** — revisit_radius=0.75 selected as Stage 2 final; 5 runs, 100% completion, worst revisit 9%, median TTC 200 s |
 
 ### Stage 1C Baseline Metrics
 

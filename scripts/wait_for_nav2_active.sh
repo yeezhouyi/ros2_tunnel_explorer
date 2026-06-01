@@ -34,10 +34,11 @@ SCRIPT_NAME="$(basename "$0")"
 TIMEOUT_SECONDS=60
 INTERVAL_SECONDS=2
 
-# Allow --timeout override from args
+# Allow --timeout or --timeout-seconds override from args
 while [ $# -gt 0 ]; do
   case "$1" in
     --timeout) TIMEOUT_SECONDS="$2"; shift 2 ;;
+    --timeout-seconds) TIMEOUT_SECONDS="$2"; shift 2 ;;
     --help)
       sed -n 's/^# //p; /^$/q' "$0" | head -40
       exit 0
@@ -69,6 +70,7 @@ REQUIRED_NODES=(
 
 echo "[${SCRIPT_NAME}] Waiting for Nav2 lifecycle nodes to become active..."
 
+first_pass_done=false
 elapsed=0
 while [ "${elapsed}" -lt "${TIMEOUT_SECONDS}" ]; do
   all_active=true
@@ -82,10 +84,37 @@ while [ "${elapsed}" -lt "${TIMEOUT_SECONDS}" ]; do
   done
 
   if ${all_active}; then
-    echo "[${SCRIPT_NAME}] All Nav2 lifecycle nodes are active."
-    exit 0
+    if ${first_pass_done}; then
+      # Second consecutive pass — lifecycle is stable.
+      # Now verify the critical map→base_link TF, which may take
+      # extra time in WSL2 due to Gazebo→ROS bridge startup latency.
+      echo "[${SCRIPT_NAME}] Lifecycle stable — verifying TF tree..."
+      tf_out="$(mktemp)"
+      timeout 10 ros2 run tf2_ros tf2_echo map base_link 2>/dev/null \
+        > "${tf_out}" || true
+      if grep -q "At time" "${tf_out}" 2>/dev/null; then
+        rm -f "${tf_out}"
+        echo "[${SCRIPT_NAME}] All Nav2 lifecycle nodes are active."
+        exit 0
+      fi
+      rm -f "${tf_out}"
+      # TF not ready yet — keep first_pass_done=true so we retry TF
+      # immediately on next cycle (no 5s stabilization penalty).
+      echo "[${SCRIPT_NAME}] TF not ready yet, continuing..."
+      sleep 5
+      elapsed=$((elapsed + 5))
+      continue
+    fi
+    # First time seeing all active — wait for stabilization
+    # (global_costmap may asynchronously fail after activation if the
+    #  map→base_link TF is not yet available from SLAM)
+    first_pass_done=true
+    sleep 5
+    elapsed=$((elapsed + 5))
+    continue
   fi
 
+  first_pass_done=false
   sleep "${INTERVAL_SECONDS}"
   elapsed=$((elapsed + INTERVAL_SECONDS))
 done
