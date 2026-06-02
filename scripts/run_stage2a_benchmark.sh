@@ -797,11 +797,35 @@ RESULTS
     EXPLORER_PARAMS_SHA256="file_not_found"
     EXPLORER_SELECTION_STRATEGY="unknown"
   fi
+
+  # ── terminal_state and completion_reason ─────────────────────────────
+  if [ "${RUN_STATUS}" = "COMPLETED" ]; then
+    TERMINAL_STATE="COMPLETED"
+    COMPLETION_REASON="no_frontiers_for_10_cycles"
+  elif grep -q "Exploration stalled" "${EXPLORER_LOG}" 2>/dev/null; then
+    TERMINAL_STATE="STALLED"
+    COMPLETION_REASON="local_loop_no_safe_recovery_probe"
+  elif [ "${RUN_STATUS}" = "STALLED" ]; then
+    TERMINAL_STATE="STALLED"
+    COMPLETION_REASON="no_progress"
+  elif [ "${RUN_STATUS}" = "CRASHED" ]; then
+    TERMINAL_STATE="CRASHED"
+    COMPLETION_REASON=""
+  elif [ "${RUN_STATUS}" = "STARTUP_FAILED" ]; then
+    TERMINAL_STATE="STARTUP_FAILED"
+    COMPLETION_REASON=""
+  else
+    TERMINAL_STATE="TIMEOUT"
+    COMPLETION_REASON=""
+  fi
+
   JSON_SCRIPT=$(mktemp /tmp/benchmark_json_XXXXXXXX.py)
   cat > "${JSON_SCRIPT}" << JSONPYEOF
 import json
 data = {
     'run_status': '${RUN_STATUS:-TIMEOUT}',
+    'terminal_state': '${TERMINAL_STATE:-TIMEOUT}',
+    'completion_reason': '${COMPLETION_REASON:-}',
     'stable_completion_detected': $( [ "${STABLE_COMPLETION_DETECTED:-false}" = "true" ] && echo True || echo False ),
     'completion_candidate_detected': $( [ "${COMPLETION_DETECTED:-false}" = "true" ] && echo True || echo False ),
     'completion_candidate_time_seconds': ${COMPLETION_AT_SEC:-0},
