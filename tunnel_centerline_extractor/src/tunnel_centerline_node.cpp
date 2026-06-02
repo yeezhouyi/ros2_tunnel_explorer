@@ -32,11 +32,14 @@ TunnelCenterlineNode::TunnelCenterlineNode()
     [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) { map_callback(msg); });
 
   if (publish_distance_map_)
-    dist_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/distance_map", 1);
+    dist_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
+      "/tunnel_centerline/distance_map", 1);
   if (publish_risk_map_)
-    risk_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("~/risk_map", 1);
+    risk_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
+      "/tunnel_centerline/risk_map", 1);
   if (publish_markers_)
-    marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("~/markers", 10);
+    marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/tunnel_centerline/markers", 10);
 
   int period_ms = static_cast<int>(publish_period_seconds_ * 1000.0);
   publish_timer_ = create_wall_timer(
