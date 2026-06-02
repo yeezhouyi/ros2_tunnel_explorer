@@ -19,6 +19,8 @@
 | **3B** | **Branching-World Dry Run** | **PASS** — COMPLETED at 732 s, 9/9 nav success, 5 unique bins, 44.4% revisit |
 | **3C** | **Topology Generalization (Formal)** | **FAIL** — completion 40% (2/5), mean revisit 49.3%, entrance-frontier oscillation despite 100% Nav2 success |
 | **3D** | **Entrance-Loop Recovery** | **PASS** — 5/5 explorer-level completion, mean revisit 34.6%, recovery probe 4/4 success, Nav2 100% |
+| **4A** | **Tunnel Centerline Extraction** | **PASS** — distance field, Zhang-Suen skeleton, branch/endpoint detection, 8/8 tests |
+| **4B** | **Tunnel-Aware Frontier Scoring** | **PASS** — centerline + wall-risk features in scorer, `tunnel_aware` strategy, fallback to 3D, 7/7 tests |
 
 ### Stage 1C Baseline Metrics
 
@@ -214,9 +216,9 @@ All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
 | `tunnel_explorer_bringup` | Python/YAML | Launch files, configs, RViz views |
 | `benchmark_tools` | Python | Metrics recording, analysis, plotting |
 | `tunnel_frontier_explorer` | C++ | Frontier-based autonomous exploration (Stage 1, nearest-frontier baseline) |
-| `tunnel_centerline_extractor` | C++ | Tunnel centerline distance field extraction (Planned — Stage 4) |
+| `tunnel_centerline_extractor` | C++ | Tunnel centerline distance field, skeleton, branch-point extraction (Stage 4A) |
 | `tunnel_aware_planner` | C++ | Tunnel-aware global planner plugin for Nav2 (Planned — Stage 5) |
-| `tunnel_worlds` | Python/SDF | Parametric tunnel world generator (Planned — Stage 3) |
+| `tunnel_worlds` | Python/SDF | Parametric tunnel world generator (Stage 3) |
 
 ## Quick Start (Stage 2A: Baseline Benchmark)
 
@@ -436,14 +438,15 @@ remained 100% across all stages.
 - [Stage 2B Design](docs/stage2b_information_gain_revisit_design.md) — information gain + revisit penalty scoring
 - [ROS2 Jazzy Compatibility](docs/jazzy_compatibility.md)
 - [Stage 3D Entrance-Loop Recovery Results](docs/stage3d_entrance_loop_recovery_results.md)
+- [Stage 4B Tunnel-Aware Scoring Results](docs/stage4b_tunnel_aware_frontier_scoring_results.md)
 
 ## Roadmap
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | **v0.1** | Stage 3D finalization, benchmark harness cleanup | ✅ `v0.1-stage3d-clean` |
-| **Stage 4A** | Tunnel centerline / distance-field / branch-point extraction | 🚧 planned |
-| **Stage 4B** | Centerline + wall-risk features in frontier scorer | 📋 |
+| **Stage 4A** | Tunnel centerline / distance-field / branch-point extraction | ✅ `stage4a-centerline-extraction` |
+| **Stage 4B** | Centerline + wall-risk features in frontier scorer | ✅ `stage4b-tunnel-aware-frontier-scoring` |
 | **Stage 4C** | L / Y / T / cross / dead-end multi-topology benchmark suite | 📋 |
 | **Stage 5** | Nav2 Tunnel-Aware Planner plugin (wall risk + centerline deviation cost) | 📋 |
 | **Stage 6** | Sensor degradation, narrow passages, dynamic obstacles, rosbag validation | 📋 |

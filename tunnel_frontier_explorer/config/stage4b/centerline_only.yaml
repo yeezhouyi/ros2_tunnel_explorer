@@ -1,0 +1,10 @@
+# Stage 4B ablation: centerline-alignment only — no wall risk.
+/**:
+  ros__parameters:
+    selection_strategy: tunnel_aware
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    weight_centerline_alignment: 0.3
+    weight_wall_risk: 0.0

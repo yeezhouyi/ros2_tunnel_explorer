@@ -1,0 +1,11 @@
+# Stage 3D baseline — no tunnel geometry features.
+# Used as the control for Stage 4B ablation comparison.
+/**:
+  ros__parameters:
+    selection_strategy: information_gain_revisit
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    weight_centerline_alignment: 0.0
+    weight_wall_risk: 0.0
