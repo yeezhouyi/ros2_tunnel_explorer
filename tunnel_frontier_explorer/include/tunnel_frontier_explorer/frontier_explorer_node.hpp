@@ -36,6 +36,7 @@
 #include "tunnel_frontier_explorer/frontier_goal_selector.hpp"
 #include "tunnel_frontier_explorer/frontier_scorer.hpp"
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
+#include "tunnel_frontier_explorer/tunnel_geometry_grid.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -88,6 +89,8 @@ private:
 
   // ── Subscriptions / publishers / clients ─────────────────────────────
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr dist_map_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr risk_map_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SharedPtr action_client_;
   rclcpp::TimerBase::SharedPtr exploration_timer_;
@@ -121,6 +124,10 @@ private:
   double goal_success_cooldown_seconds_;
   double goal_success_cooldown_radius_;
 
+  // Stage 4B: tunnel geometry subscriber callbacks
+  void distanceMapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr & msg);
+  void riskMapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr & msg);
+
   // Stage 3D: entrance-loop recovery
   bool loop_detection_enabled_;
   int loop_window_size_;
@@ -132,6 +139,14 @@ private:
   std::vector<double> recovery_probe_angle_offsets_rad_;
   double recovery_probe_cooldown_seconds_;
   int recovery_max_attempts_;
+
+  // Stage 4B: tunnel geometry
+  std::string tunnel_distance_map_topic_;
+  std::string tunnel_risk_map_topic_;
+  double tunnel_geometry_max_age_seconds_;
+  bool geometry_missing_fallback_to_stage3d_;
+  TunnelGeometryGrid tunnel_geometry_;
+  rclcpp::Time tunnel_geometry_last_update_{0, 0, RCL_ROS_TIME};
 
   // ── Goal safety projection ──────────────────────────────────────
   std::optional<Point2D> projectGoalTowardRobot(

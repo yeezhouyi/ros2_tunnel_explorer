@@ -22,6 +22,7 @@
 #include "tunnel_frontier_explorer/frontier_cluster.hpp"
 #include "tunnel_frontier_explorer/frontier_detector.hpp"
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
+#include "tunnel_frontier_explorer/tunnel_geometry_grid.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -46,6 +47,11 @@ struct FrontierScorerConfig
 
   /// Weight applied to normalised revisit penalty (>= 0).  Revisit reduces score.
   double weight_revisit = 1.5;
+
+  // Stage 4B: tunnel geometry features
+  double weight_centerline_alignment = 0.3;
+  double weight_wall_risk = 0.5;
+  double geometry_sampling_radius_meters = 0.25;
 };
 
 /// Scoring result for a single candidate goal.
@@ -80,6 +86,11 @@ struct ScoredGoal
 
   /// Normalised to [0, 1] using max_revisit_count as denominator.
   double normalized_revisit_penalty = 0.0;
+
+  // Stage 4B: tunnel geometry features (only set when using scoreAndRankTunnelAware)
+  double normalized_centerline_alignment = 0.0;
+  double normalized_wall_risk = 0.0;
+  Point2D scoring_point_world = {0.0, 0.0};
 };
 
 /// Scores candidate frontier goals by information gain, distance, and revisit
@@ -100,7 +111,7 @@ public:
   /// Default constructor uses FrontierScorerConfig{} defaults (all valid).
   FrontierScorer() = default;
 
-  /// Score and rank all candidate clusters.
+  /// Score and rank all candidate clusters (Stage 2/3 baseline).
   ///
   /// Information gain is computed using a **circular** radius (bounding box
   /// is used only for iteration speed).  Unknown cells are those with
@@ -118,6 +129,26 @@ public:
     const GridMap & map,
     const Point2D & robot,
     const FrontierVisitHistory & history) const;
+
+  /// Stage 4B: tunnel-aware scoring with centerline alignment and wall risk.
+  ///
+  /// Extends the baseline formula:
+  ///   score = w_gain * gain - w_dist * dist - w_revisit * revisit
+  ///         + w_centerline * centerline - w_wall_risk * risk
+  ///
+  /// The scoring point is projected 0.4 m toward the robot from the
+  /// frontier representative, then sampled against the tunnel geometry
+  /// grids.  This avoids penalising frontiers whose representative sits
+  /// on the free/unknown boundary (which naturally has high wall risk).
+  ///
+  /// If @p tunnel_geometry is not valid(), falls back to the baseline
+  /// scoreAndRank().
+  std::vector<ScoredGoal> scoreAndRankTunnelAware(
+    const std::vector<FrontierCluster> & candidates,
+    const GridMap & map,
+    const Point2D & robot,
+    const FrontierVisitHistory & history,
+    const TunnelGeometryGrid & tunnel_geometry) const;
 
 private:
   FrontierScorerConfig config_;

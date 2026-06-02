@@ -116,6 +116,16 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   recovery_max_attempts_ = declare_parameter<int>(
     "recovery_max_attempts", 3);
 
+  // -- Stage 4B: tunnel geometry ─────────────────────────────────────────
+  tunnel_distance_map_topic_ = declare_parameter<std::string>(
+    "tunnel_distance_map_topic", "/tunnel_centerline/distance_map");
+  tunnel_risk_map_topic_ = declare_parameter<std::string>(
+    "tunnel_risk_map_topic", "/tunnel_centerline/risk_map");
+  tunnel_geometry_max_age_seconds_ = declare_parameter<double>(
+    "tunnel_geometry_max_age_seconds", 3.0);
+  geometry_missing_fallback_to_stage3d_ = declare_parameter<bool>(
+    "geometry_missing_fallback_to_stage3d", true);
+
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
     "selection_strategy", "nearest");
@@ -134,12 +144,14 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
 
   // Validate selection_strategy.
   if (selection_strategy_ != "nearest" &&
-    selection_strategy_ != "information_gain_revisit")
+    selection_strategy_ != "information_gain_revisit" &&
+    selection_strategy_ != "tunnel_aware")
   {
     RCLCPP_ERROR(
       get_logger(),
-      "Invalid selection_strategy '%s' -- must be 'nearest' or "
-      "'information_gain_revisit'", selection_strategy_.c_str());
+      "Invalid selection_strategy '%s' -- must be 'nearest', "
+      "'information_gain_revisit', or 'tunnel_aware'",
+      selection_strategy_.c_str());
     throw std::runtime_error("Invalid selection_strategy");
   }
 
@@ -154,6 +166,12 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     scorer_cfg.weight_information_gain = weight_information_gain_;
     scorer_cfg.weight_distance = weight_distance_;
     scorer_cfg.weight_revisit = weight_revisit_;
+    scorer_cfg.weight_centerline_alignment =
+      declare_parameter<double>("weight_centerline_alignment", 0.3);
+    scorer_cfg.weight_wall_risk =
+      declare_parameter<double>("weight_wall_risk", 0.5);
+    scorer_cfg.geometry_sampling_radius_meters =
+      declare_parameter<double>("geometry_sampling_radius_meters", 0.25);
     scorer_ = FrontierScorer(scorer_cfg);
   }
 
@@ -183,6 +201,14 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     map_topic_, map_qos,
     [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) {mapCallback(msg);});
+
+  // ── Stage 4B: tunnel geometry subscribers ──────────────────────────
+  dist_map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
+    tunnel_distance_map_topic_, rclcpp::QoS(1).transient_local().reliable(),
+    [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) { distanceMapCallback(msg); });
+  risk_map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
+    tunnel_risk_map_topic_, rclcpp::QoS(1).transient_local().reliable(),
+    [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) { riskMapCallback(msg); });
 
   // ── Marker publisher ─────────────────────────────────────────────────
   marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -219,6 +245,31 @@ void TunnelFrontierExplorerNode::mapCallback(
     frontier_empty_count_ = 0;
     transitionTo(ExplorationState::IDLE);
   }
+}
+
+// ── Stage 4B: tunnel geometry callbacks ─────────────────────────────────
+
+void TunnelFrontierExplorerNode::distanceMapCallback(
+  const nav_msgs::msg::OccupancyGrid::SharedPtr & msg)
+{
+  tunnel_geometry_.distance_map.width = msg->info.width;
+  tunnel_geometry_.distance_map.height = msg->info.height;
+  tunnel_geometry_.distance_map.resolution = msg->info.resolution;
+  tunnel_geometry_.distance_map.origin_x = msg->info.origin.position.x;
+  tunnel_geometry_.distance_map.origin_y = msg->info.origin.position.y;
+  tunnel_geometry_.distance_map.data = msg->data;
+  tunnel_geometry_last_update_ = this->now();
+}
+
+void TunnelFrontierExplorerNode::riskMapCallback(
+  const nav_msgs::msg::OccupancyGrid::SharedPtr & msg)
+{
+  tunnel_geometry_.risk_map.width = msg->info.width;
+  tunnel_geometry_.risk_map.height = msg->info.height;
+  tunnel_geometry_.risk_map.resolution = msg->info.resolution;
+  tunnel_geometry_.risk_map.origin_x = msg->info.origin.position.x;
+  tunnel_geometry_.risk_map.origin_y = msg->info.origin.position.y;
+  tunnel_geometry_.risk_map.data = msg->data;
 }
 
 // ── explorationTimerCallback ─────────────────────────────────────────────
@@ -507,6 +558,84 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             best.raw_revisit_count,
             best.clamped_revisit_count,
             best.normalized_revisit_penalty,
+            best.score,
+            scored_frontiers.size());
+        } else if (selection_strategy_ == "tunnel_aware") {
+          // Stage 4B: tunnel-aware scoring with geometry fallback.
+          AllCandidatesResult all_sel = goal_selector_.selectAll(
+            valid, gm, robot_pose);
+          too_close_for_marker = all_sel.too_close_goals;
+
+          if (all_sel.candidates.empty()) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu frontiers within min_goal_distance=%.2f m "
+              "— waiting for map update",
+              valid.size(), min_goal_distance_meters_);
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              too_close_for_marker);
+            return;
+          }
+
+          // Phase 2: second blacklist check.
+          const auto steady_now = std::chrono::steady_clock::now();
+          std::vector<FrontierCluster> post_blacklist;
+          for (const auto & c : all_sel.candidates) {
+            if (!blacklist_.contains(c.representative_world, steady_now)) {
+              post_blacklist.push_back(c);
+            }
+          }
+          if (post_blacklist.empty()) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu distance-candidates blacklisted — waiting",
+              all_sel.candidates.size());
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              too_close_for_marker);
+            return;
+          }
+
+          // Phase 3: tunnel-aware or fallback scoring.
+          bool geometry_valid = tunnel_geometry_.valid();
+          const double age =
+            (this->now() - tunnel_geometry_last_update_).seconds();
+          if (age > tunnel_geometry_max_age_seconds_) geometry_valid = false;
+
+          if (geometry_valid) {
+            scored_frontiers = scorer_.scoreAndRankTunnelAware(
+              post_blacklist, gm, robot_pose, visit_history_,
+              tunnel_geometry_);
+          } else if (geometry_missing_fallback_to_stage3d_) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 10000,
+              "Tunnel geometry not available — falling back to Stage 3D scoring");
+            scored_frontiers = scorer_.scoreAndRank(
+              post_blacklist, gm, robot_pose, visit_history_);
+          } else {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "Waiting for tunnel geometry maps...");
+            return;
+          }
+
+          const auto & best = scored_frontiers.front();
+          goal_pt = best.cluster.representative_world;
+          selected_for_marker = goal_pt;
+
+          RCLCPP_INFO(get_logger(),
+            "Goal: (%.2f, %.2f) dist=%.2f "
+            "gain=%zu(raw)/%.2f(tr)/%.3f(norm) "
+            "revisit=%zu(raw)/%zu(cl)/%.3f(norm) "
+            "align=%.3f(norm) risk=%.3f(norm) "
+            "score=%.4f [%zu cand]",
+            goal_pt.x, goal_pt.y,
+            best.goal_distance_meters,
+            best.raw_information_gain,
+            best.transformed_information_gain,
+            best.normalized_information_gain,
+            best.raw_revisit_count,
+            best.clamped_revisit_count,
+            best.normalized_revisit_penalty,
+            best.normalized_centerline_alignment,
+            best.normalized_wall_risk,
             best.score,
             scored_frontiers.size());
         } else {

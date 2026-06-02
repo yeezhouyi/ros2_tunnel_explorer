@@ -126,6 +126,24 @@ if(BUILD_TESTING)
   target_include_directories(test_frontier_visit_history PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
+
+  # ── Stage 4B: tunnel geometry grid tests ─────────────────────────────
+  ament_add_gtest(test_tunnel_geometry_grid
+    test/test_tunnel_geometry_grid.cpp
+  )
+  target_link_libraries(test_tunnel_geometry_grid frontier_detection)
+  target_include_directories(test_tunnel_geometry_grid PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  # ── Stage 4B: tunnel-aware scorer tests ──────────────────────────────
+  ament_add_gtest(test_frontier_scorer_tunnel_aware
+    test/test_frontier_scorer_tunnel_aware.cpp
+  )
+  target_link_libraries(test_frontier_scorer_tunnel_aware frontier_detection)
+  target_include_directories(test_frontier_scorer_tunnel_aware PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
 endif()
 
 ament_package()

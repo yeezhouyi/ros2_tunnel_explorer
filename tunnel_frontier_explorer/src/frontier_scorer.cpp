@@ -237,4 +237,147 @@ std::vector<ScoredGoal> FrontierScorer::scoreAndRank(
   return scored;
 }
 
+// ── scoreAndRankTunnelAware ────────────────────────────────────────────────
+
+std::vector<ScoredGoal> FrontierScorer::scoreAndRankTunnelAware(
+  const std::vector<FrontierCluster> & candidates,
+  const GridMap & map,
+  const Point2D & robot,
+  const FrontierVisitHistory & history,
+  const TunnelGeometryGrid & tunnel_geometry) const
+{
+  if (!tunnel_geometry.valid()) {
+    return scoreAndRank(candidates, map, robot, history);
+  }
+  if (candidates.empty()) return {};
+
+  const std::size_t n = candidates.size();
+  const double proj_dist = 0.4;  // pull toward robot before sampling geometry
+
+  // ── Phase 1: Compute raw metrics incl. tunnel geometry ─────────────────
+  std::vector<ScoredGoal> scored(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    const auto & c = candidates[i];
+    auto & sg = scored[i];
+    sg.cluster = c;
+
+    const double dx = c.representative_world.x - robot.x;
+    const double dy = c.representative_world.y - robot.y;
+    sg.goal_distance_meters = std::sqrt(dx * dx + dy * dy);
+
+    // Information gain.
+    sg.raw_information_gain = countUnknownCellsInRadius(
+      map, c.representative_world, config_.information_gain_radius_meters);
+    sg.transformed_information_gain =
+      std::log1p(static_cast<double>(sg.raw_information_gain));
+
+    // Revisit penalty.
+    sg.raw_revisit_count = history.countVisitsNear(
+      c.representative_world, config_.revisit_radius_meters);
+    sg.clamped_revisit_count = std::min(
+      sg.raw_revisit_count, config_.max_revisit_count);
+    sg.normalized_revisit_penalty =
+      static_cast<double>(sg.clamped_revisit_count) /
+      static_cast<double>(config_.max_revisit_count);
+
+    // ── Tunnel geometry: project toward robot, then sample ──────────────
+    Point2D scoring_pt = c.representative_world;   // fallback
+    double norm = sg.goal_distance_meters;
+    if (norm > 0.01) {
+      double ux = -dx / norm;  // toward robot
+      double uy = -dy / norm;
+      double effective = std::min(proj_dist, norm * 0.5);  // don't overshoot
+      scoring_pt.x = c.representative_world.x + effective * ux;
+      scoring_pt.y = c.representative_world.y + effective * uy;
+    }
+    sg.scoring_point_world = scoring_pt;
+
+    auto align_opt = tunnel_geometry.sampleCenterlineAlignment(scoring_pt);
+    auto risk_opt  = tunnel_geometry.sampleWallRisk(scoring_pt);
+
+    // Fall back to radius-average if point-sample returns nullopt.
+    double align = align_opt.value_or(
+      tunnel_geometry.avgCenterlineInRadius(
+        scoring_pt, config_.geometry_sampling_radius_meters));
+    double risk = risk_opt.value_or(
+      tunnel_geometry.avgRiskInRadius(
+        scoring_pt, config_.geometry_sampling_radius_meters));
+
+    sg.normalized_centerline_alignment = align;
+    sg.normalized_wall_risk = risk;
+  }
+
+  // ── Phase 2: Min/max for normalisation ────────────────────────────────
+  double min_gain = std::numeric_limits<double>::max();
+  double max_gain = std::numeric_limits<double>::lowest();
+  double min_dist = std::numeric_limits<double>::max();
+  double max_dist = std::numeric_limits<double>::lowest();
+  double min_align = std::numeric_limits<double>::max();
+  double max_align = std::numeric_limits<double>::lowest();
+  double min_risk = std::numeric_limits<double>::max();
+  double max_risk = std::numeric_limits<double>::lowest();
+
+  for (const auto & sg : scored) {
+    min_gain = std::min(min_gain, sg.transformed_information_gain);
+    max_gain = std::max(max_gain, sg.transformed_information_gain);
+    min_dist = std::min(min_dist, sg.goal_distance_meters);
+    max_dist = std::max(max_dist, sg.goal_distance_meters);
+    min_align = std::min(min_align, sg.normalized_centerline_alignment);
+    max_align = std::max(max_align, sg.normalized_centerline_alignment);
+    min_risk = std::min(min_risk, sg.normalized_wall_risk);
+    max_risk = std::max(max_risk, sg.normalized_wall_risk);
+  }
+
+  const double gain_range = max_gain - min_gain;
+  const double dist_range = max_dist - min_dist;
+  const double align_range = max_align - min_align;
+  const double risk_range = max_risk - min_risk;
+
+  // ── Phase 3: Normalise and score ─────────────────────────────────────
+  for (auto & sg : scored) {
+    if (gain_range > kScoreEpsilon)
+      sg.normalized_information_gain =
+        (sg.transformed_information_gain - min_gain) / gain_range;
+    else sg.normalized_information_gain = 0.0;
+
+    if (dist_range > kScoreEpsilon)
+      sg.normalized_distance =
+        (sg.goal_distance_meters - min_dist) / dist_range;
+    else sg.normalized_distance = 0.0;
+
+    // Re-normalise with the full candidate set bounds.
+    if (align_range > kScoreEpsilon)
+      sg.normalized_centerline_alignment =
+        (sg.normalized_centerline_alignment - min_align) / align_range;
+    else sg.normalized_centerline_alignment = 0.0;
+
+    if (risk_range > kScoreEpsilon)
+      sg.normalized_wall_risk =
+        (sg.normalized_wall_risk - min_risk) / risk_range;
+    else sg.normalized_wall_risk = 0.0;
+
+    sg.score =
+      config_.weight_information_gain * sg.normalized_information_gain -
+      config_.weight_distance * sg.normalized_distance -
+      config_.weight_revisit * sg.normalized_revisit_penalty +
+      config_.weight_centerline_alignment * sg.normalized_centerline_alignment -
+      config_.weight_wall_risk * sg.normalized_wall_risk;
+  }
+
+  // ── Phase 4: Sort (same deterministic tie-break) ─────────────────────
+  std::sort(scored.begin(), scored.end(),
+    [](const ScoredGoal & a, const ScoredGoal & b) {
+      if (std::abs(a.score - b.score) > kScoreEpsilon) return a.score > b.score;
+      if (std::abs(a.goal_distance_meters - b.goal_distance_meters) > kScoreEpsilon)
+        return a.goal_distance_meters < b.goal_distance_meters;
+      if (a.raw_information_gain != b.raw_information_gain)
+        return a.raw_information_gain > b.raw_information_gain;
+      if (a.cluster.representative_cell.row != b.cluster.representative_cell.row)
+        return a.cluster.representative_cell.row < b.cluster.representative_cell.row;
+      return a.cluster.representative_cell.col < b.cluster.representative_cell.col;
+    });
+
+  return scored;
+}
+
 }  // namespace tunnel_frontier_explorer
