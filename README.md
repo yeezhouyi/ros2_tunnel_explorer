@@ -435,6 +435,19 @@ remained 100% across all stages.
 - [Stage 2A Baseline Results](docs/stage2a_nearest_frontier_baseline_results.md) — 5-run nearest-frontier baseline
 - [Stage 2B Design](docs/stage2b_information_gain_revisit_design.md) — information gain + revisit penalty scoring
 - [ROS2 Jazzy Compatibility](docs/jazzy_compatibility.md)
+- [Stage 3D Entrance-Loop Recovery Results](docs/stage3d_entrance_loop_recovery_results.md)
+
+## Roadmap
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| **v0.1** | Stage 3D finalization, benchmark harness cleanup | ✅ `v0.1-stage3d-clean` |
+| **Stage 4A** | Tunnel centerline / distance-field / branch-point extraction | 🚧 planned |
+| **Stage 4B** | Centerline + wall-risk features in frontier scorer | 📋 |
+| **Stage 4C** | L / Y / T / cross / dead-end multi-topology benchmark suite | 📋 |
+| **Stage 5** | Nav2 Tunnel-Aware Planner plugin (wall risk + centerline deviation cost) | 📋 |
+| **Stage 6** | Sensor degradation, narrow passages, dynamic obstacles, rosbag validation | 📋 |
+| **Stage 7** | Hardware / HITL validation | 📋 |
 
 ## WSL2 Restart Checklist
 
