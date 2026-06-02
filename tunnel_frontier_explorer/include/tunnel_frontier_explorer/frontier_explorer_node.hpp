@@ -113,6 +113,16 @@ private:
   double blacklist_timeout_seconds_;
   bool orient_goal_toward_frontier_;
   double min_goal_distance_meters_;
+  bool goal_projection_enabled_;
+  double goal_projection_distance_;
+  double goal_projection_min_remaining_distance_;
+  double goal_success_cooldown_seconds_;
+  double goal_success_cooldown_radius_;
+
+  // ── Goal safety projection ──────────────────────────────────────
+  std::optional<Point2D> projectGoalTowardRobot(
+    const Point2D & goal, const Point2D & robot,
+    const nav_msgs::msg::OccupancyGrid & map);
   std::string map_topic_;
   std::string global_frame_;
   std::string robot_base_frame_;
@@ -143,6 +153,16 @@ private:
   // Consecutive empty frontier cycles before entering COMPLETED.
   std::size_t frontier_empty_count_ = 0;
   static constexpr std::size_t k_max_empty_cycles_ = 10;
+
+  // Consecutive cycles where all frontiers are suppressed (blacklisted
+  // or inside success cooldown regions).  After enough consecutive
+  // suppressed cycles the explorer declares completion rather than
+  // spinning forever re-dispatching the same entrance-area points.
+  std::size_t all_suppressed_count_ = 0;
+  // Must outlast the success cooldown (120 s / 1 s per cycle = 120)
+  // plus margin for the map to resolve, otherwise we declare completion
+  // while the cooldown is still active — a false positive.
+  static constexpr std::size_t k_max_all_suppressed_cycles_ = 180;
 };
 
 }  // namespace tunnel_frontier_explorer

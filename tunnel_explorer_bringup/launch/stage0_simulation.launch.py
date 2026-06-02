@@ -84,6 +84,11 @@ def generate_launch_description():
             'use_rviz': 'False',
             'use_composition': LaunchConfiguration('use_composition'),
             'world': LaunchConfiguration('world'),
+            # Spawn robot inside the trunk corridor, well clear of the back wall.
+            # Default in tb3_simulation_launch.py is (-2.00, -0.50) which lands
+            # inside the trunk solid slab — causing costmap corruption.
+            'x_pose': '0.0',
+            'y_pose': '1.0',
         }.items(),
     )
 

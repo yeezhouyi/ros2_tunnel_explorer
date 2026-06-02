@@ -27,6 +27,11 @@
     # Goal
     orient_goal_toward_frontier: true
     min_goal_distance_meters: 0.50
+    goal_projection_enabled: true
+    goal_projection_distance: 0.4
+    goal_projection_min_remaining_distance: 0.6
+    goal_success_cooldown_seconds: 120.0
+    goal_success_cooldown_radius: 1.0
 
     # ── Stage 2C: revisit_radius 0.50 → 0.75 ──────────────────────────────
     selection_strategy: information_gain_revisit

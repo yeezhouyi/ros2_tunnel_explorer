@@ -75,6 +75,16 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     "orient_goal_toward_frontier", true);
   min_goal_distance_meters_ = declare_parameter<double>(
     "min_goal_distance_meters", 0.50);
+  goal_projection_enabled_ = declare_parameter<bool>(
+    "goal_projection_enabled", true);
+  goal_projection_distance_ = declare_parameter<double>(
+    "goal_projection_distance", 0.4);
+  goal_projection_min_remaining_distance_ = declare_parameter<double>(
+    "goal_projection_min_remaining_distance", 0.6);
+  goal_success_cooldown_seconds_ = declare_parameter<double>(
+    "goal_success_cooldown_seconds", 120.0);
+  goal_success_cooldown_radius_ = declare_parameter<double>(
+    "goal_success_cooldown_radius", 1.0);
 
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
@@ -258,12 +268,21 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           if (!clusters.empty() &&
             clusters.size() == blacklisted_positions.size())
           {
+            ++all_suppressed_count_;
             RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
-            "All %zu frontiers blacklisted — waiting for expiry",
-            clusters.size());
+            "All %zu frontiers suppressed by cooldown (%zu/%zu cycles)",
+            clusters.size(), all_suppressed_count_,
+            k_max_all_suppressed_cycles_);
             frontier_empty_count_ = 0;
+            if (all_suppressed_count_ >= k_max_all_suppressed_cycles_) {
+              RCLCPP_INFO(get_logger(),
+                "No viable frontiers after suppression for %zu cycles — "
+                "exploration complete", k_max_all_suppressed_cycles_);
+              transitionTo(ExplorationState::COMPLETED);
+            }
           } else {
             ++frontier_empty_count_;
+            all_suppressed_count_ = 0;
             RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
             "No frontiers (%zu/%zu empty cycles)",
             frontier_empty_count_, k_max_empty_cycles_);
@@ -277,6 +296,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           return;
         }
         frontier_empty_count_ = 0;
+        all_suppressed_count_ = 0;
 
       // Select best goal — strategy-dependent.
         Point2D goal_pt;
@@ -371,17 +391,45 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             target.goal_distance_to_robot);
         }
 
-      // Prepare NavigateToPose goal.
+      // ── Goal safety projection ─────────────────────────────────
+      // Pull the selected frontier point inward toward the robot so
+      // Nav2 doesn't try to converge on the exact frontier/unknown
+      // boundary where inflation or unknown cells cause timeout.
+      Point2D safe_goal_pt = goal_pt;
+      std::optional<Point2D> projected_goal_for_marker = std::nullopt;
+      if (goal_projection_enabled_ && latest_map_) {
+        auto projected = projectGoalTowardRobot(
+          goal_pt, robot_pose, *latest_map_);
+        if (projected) {
+          safe_goal_pt = *projected;
+          projected_goal_for_marker = safe_goal_pt;
+          const double dist_to_orig = std::hypot(
+            goal_pt.x - robot_pose.x, goal_pt.y - robot_pose.y);
+          const double projection_offset = std::hypot(
+            goal_pt.x - safe_goal_pt.x, goal_pt.y - safe_goal_pt.y);
+          RCLCPP_INFO(get_logger(),
+            "Projected goal: (%.2f, %.2f) dist=%.2f "
+            "→ safe (%.2f, %.2f) offset=%.2f",
+            goal_pt.x, goal_pt.y, dist_to_orig,
+            safe_goal_pt.x, safe_goal_pt.y, projection_offset);
+        } else {
+          RCLCPP_DEBUG(get_logger(),
+            "Goal projection skipped for (%.2f, %.2f) — using original",
+            goal_pt.x, goal_pt.y);
+        }
+      }
+
+      // Prepare NavigateToPose goal using the (possibly projected) safe point.
         auto goal_msg = nav2_msgs::action::NavigateToPose::Goal();
         goal_msg.pose.header.frame_id = global_frame_;
         goal_msg.pose.header.stamp = this->now();
-        goal_msg.pose.pose.position.x = goal_pt.x;
-        goal_msg.pose.pose.position.y = goal_pt.y;
+        goal_msg.pose.pose.position.x = safe_goal_pt.x;
+        goal_msg.pose.pose.position.y = safe_goal_pt.y;
         goal_msg.pose.pose.position.z = 0.0;
 
         if (orient_goal_toward_frontier_) {
           const double yaw = std::atan2(
-          goal_pt.y - robot_pose.y, goal_pt.x - robot_pose.x);
+          safe_goal_pt.y - robot_pose.y, safe_goal_pt.x - robot_pose.x);
           goal_msg.pose.pose.orientation.z = std::sin(yaw * 0.5);
           goal_msg.pose.pose.orientation.w = std::cos(yaw * 0.5);
         } else {
@@ -411,6 +459,31 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         publishMarkers(
           clusters, blacklisted_positions, selected_for_marker,
           too_close_for_marker);
+
+        // ── Projected goal marker (blue sphere) ──────────────────
+        if (projected_goal_for_marker) {
+          visualization_msgs::msg::Marker m;
+          m.header.frame_id = global_frame_;
+          m.header.stamp = this->now();
+          m.ns = "projected_goal";
+          m.id = 0;
+          m.type = visualization_msgs::msg::Marker::SPHERE;
+          m.action = visualization_msgs::msg::Marker::ADD;
+          m.pose.position.x = projected_goal_for_marker->x;
+          m.pose.position.y = projected_goal_for_marker->y;
+          m.pose.position.z = 0.0;
+          m.pose.orientation.w = 1.0;
+          m.scale.x = 0.25;
+          m.scale.y = 0.25;
+          m.scale.z = 0.25;
+          m.color.a = 0.9;
+          m.color.r = 0.0;
+          m.color.g = 0.5;
+          m.color.b = 1.0;
+          visualization_msgs::msg::MarkerArray arr;
+          arr.markers.push_back(m);
+          marker_pub_->publish(std::move(arr));
+        }
 
         if (!scored_frontiers.empty()) {
           publishScoredFrontierMarkers(scored_frontiers);
@@ -501,6 +574,21 @@ void TunnelFrontierExplorerNode::resultCallback(
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       RCLCPP_INFO(get_logger(), "Navigation to goal succeeded");
+      // Temporarily blacklist the original frontier point on success
+      // to prevent repeatedly re-selecting the same frontier before
+      // new map data reveals fresh cells.
+      if (current_goal_ && goal_success_cooldown_seconds_ > 0.0) {
+        const auto t = std::chrono::steady_clock::now();
+        blacklist_.add(
+          *current_goal_, t, goal_success_cooldown_radius_,
+          std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::duration<double>(goal_success_cooldown_seconds_)));
+        RCLCPP_INFO(get_logger(),
+          "Success cooldown: (%.2f, %.2f) r=%.1f for %.0f s",
+          current_goal_->x, current_goal_->y,
+          goal_success_cooldown_radius_,
+          goal_success_cooldown_seconds_);
+      }
       break;
 
     case rclcpp_action::ResultCode::ABORTED: {
@@ -561,6 +649,79 @@ bool TunnelFrontierExplorerNode::getRobotPose(Point2D & robot_pose)
   }
 }
 
+// ── projectGoalTowardRobot ─────────────────────────────────────────
+//
+// Pull the selected frontier goal inward toward the robot along the
+// line from goal → robot. This prevents Nav2 from trying to converge
+// on the exact frontier/unknown boundary where the costmap inflation
+// or unknown cells cause oscillation or timeout.
+//
+// Effective projection distance is capped so the projected point
+// stays at least min_remaining_distance from the robot — otherwise
+// the robot would reach it instantly without revealing new map cells.
+//
+// Checks the projected point against the occupancy grid: it must be
+// in known free space (value == 0). Falls back to shorter projection
+// distances (stepped down by 0.1 m) if the current distance lands on
+// unknown/occupied cells.
+
+std::optional<Point2D> TunnelFrontierExplorerNode::projectGoalTowardRobot(
+  const Point2D & goal, const Point2D & robot,
+  const nav_msgs::msg::OccupancyGrid & map)
+{
+  const double dx = robot.x - goal.x;
+  const double dy = robot.y - goal.y;
+  const double norm = std::hypot(dx, dy);
+
+  // If robot is already very close to the goal, skip projection
+  // to avoid pulling the goal behind the robot.
+  if (norm < 0.2) {
+    return std::nullopt;
+  }
+
+  // Effective projection: apply full projection_distance, but ensure
+  // the projected point remains at least min_remaining_distance from
+  // the robot so it doesn't sit right on top of the current pose.
+  const double effective = std::min(
+    goal_projection_distance_,
+    std::max(0.0, norm - goal_projection_min_remaining_distance_));
+
+  if (effective < 0.1) {
+    return std::nullopt;          // too close to project meaningfully
+  }
+
+  const double ux = dx / norm;
+  const double uy = dy / norm;
+
+  // Try effective distance, then step down by 0.1 m increments until
+  // we find a known-free cell or exhaust the usable range.
+  for (double d = effective; d >= 0.1; d -= 0.1) {
+    Point2D projected;
+    projected.x = goal.x + d * ux;
+    projected.y = goal.y + d * uy;
+
+    const double ox = map.info.origin.position.x;
+    const double oy = map.info.origin.position.y;
+    const double res = map.info.resolution;
+    const int mx = static_cast<int>((projected.x - ox) / res);
+    const int my = static_cast<int>((projected.y - oy) / res);
+
+    const int w = static_cast<int>(map.info.width);
+    const int h = static_cast<int>(map.info.height);
+    if (mx < 0 || mx >= w || my < 0 || my >= h) {
+      continue;
+    }
+
+    const int idx = my * w + mx;
+    if (idx >= 0 && idx < static_cast<int>(map.data.size()) &&
+        map.data[idx] == 0) {
+      return projected;
+    }
+  }
+
+  return std::nullopt;
+}
+
 // ── publishMarkers ───────────────────────────────────────────────────────
 
 void TunnelFrontierExplorerNode::publishMarkers(
@@ -607,6 +768,7 @@ void TunnelFrontierExplorerNode::publishMarkers(
 
   // ── Selected goal (red SPHERE) ─────────────────────────────────────
   markers.markers.push_back(make_deleteall("selected_goal"));
+  markers.markers.push_back(make_deleteall("projected_goal"));
   if (selected_goal) {
     visualization_msgs::msg::Marker m;
     m.header.frame_id = global_frame_;
