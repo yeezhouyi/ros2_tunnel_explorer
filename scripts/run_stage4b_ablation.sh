@@ -23,8 +23,7 @@ OUT_ROOT="${HOME}/stage4b_benchmark"
 
 VARIANTS=("risk_only" "centerline_only" "full")
 RUN_IDS=("01" "02" "03" "04" "05")
-CENTERLINE_DELAY=20
-GEOMETRY_GATE_SECONDS=180
+GEOMETRY_GATE_SECONDS=200
 
 cleanup_centerline() {
   pkill -f "centerline_extractor.launch.py" 2>/dev/null || true
@@ -48,9 +47,10 @@ for variant in "${VARIANTS[@]}"; do
 
     BENCH_PID=$!
 
-    # Start centerline early — before explorer dispatches its first goal (~60s).
-    echo "[stage4b] Starting centerline in ${CENTERLINE_DELAY}s..."
-    sleep "${CENTERLINE_DELAY}"
+    # Start centerline immediately — it subscribes to /map and publishes
+    # when ready.  First goal may fall back to Stage 3D while centerline
+    # processes the initial map (~110 s); subsequent goals use geometry.
+    echo "[stage4b] Starting centerline immediately..."
     ros2 launch tunnel_centerline_extractor centerline_extractor.launch.py &
     CENTERLINE_PID=$!
     echo "[stage4b] Centerline PID=${CENTERLINE_PID}"

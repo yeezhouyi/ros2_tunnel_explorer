@@ -562,6 +562,9 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             scored_frontiers.size());
         } else if (selection_strategy_ == "tunnel_aware") {
           // Stage 4B: tunnel-aware scoring with geometry fallback.
+          // Geometry may not be available for the first goal (centerline
+          // takes ~110 s to process the first map).  Falls back to Stage 3D
+          // scoring for the initial cycle; subsequent goals use geometry.
           AllCandidatesResult all_sel = goal_selector_.selectAll(
             valid, gm, robot_pose);
           too_close_for_marker = all_sel.too_close_goals;
