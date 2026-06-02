@@ -48,7 +48,8 @@ enum class ExplorationState
   IDLE,
   NAVIGATING,
   COOLDOWN,
-  COMPLETED
+  COMPLETED,
+  STALLED
 };
 
 /// ROS2 node for nearest-frontier autonomous exploration.
