@@ -31,12 +31,13 @@ TunnelCenterlineNode::TunnelCenterlineNode()
     map_topic_, rclcpp::QoS(1).transient_local().reliable(),
     [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) { map_callback(msg); });
 
+  auto geo_qos = rclcpp::QoS(1).transient_local().reliable();
   if (publish_distance_map_)
     dist_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
-      "/tunnel_centerline/distance_map", 1);
+      "/tunnel_centerline/distance_map", geo_qos);
   if (publish_risk_map_)
     risk_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
-      "/tunnel_centerline/risk_map", 1);
+      "/tunnel_centerline/risk_map", geo_qos);
   if (publish_markers_)
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
       "/tunnel_centerline/markers", 10);
