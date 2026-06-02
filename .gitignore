@@ -26,6 +26,11 @@ Thumbs.db
 benchmark_tools/bags/*.db3
 benchmark_tools/bags/*.yaml
 
+# Benchmark artifacts (rosbags large, keep untracked)
+artifacts/
+src/
+CMakeFiles/
+
 # Generated reports (track scripts, not output)
 benchmark_tools/reports/*
 benchmark_tools/plots/*
