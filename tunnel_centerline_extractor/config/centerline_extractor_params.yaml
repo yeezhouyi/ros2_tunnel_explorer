@@ -1,0 +1,19 @@
+/**:
+  ros__parameters:
+    map_topic: "/map"
+    publish_distance_map: true
+    publish_risk_map: true
+    publish_markers: true
+
+    free_threshold: 20
+    occupied_threshold: 65
+
+    min_centerline_distance_m: 0.35
+    skeleton_prune_length_cells: 15
+
+    branch_merge_radius_cells: 10
+    endpoint_merge_radius_cells: 10
+
+    safe_distance_m: 1.0
+    unknown_is_blocked: true
+    publish_period_seconds: 1.0
