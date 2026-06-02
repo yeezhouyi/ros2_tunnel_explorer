@@ -43,21 +43,34 @@ for variant in "${VARIANTS[@]}"; do
       --run-id "${run_id}" \
       --stop-on-completed true \
       --stall-timeout-seconds 240 \
+      --wait-time 120 \
       --duration 900 &
 
     BENCH_PID=$!
 
-    # Start centerline AFTER benchmark cleanup (which kills ROS daemon).
-    # The daemon restarts when the simulation launches (~T+2-5s).
-    # We wait 15s so the centerline connects to the new daemon, not the
-    # one that gets killed by cleanup_simulation.sh.
-    echo "[stage4b] Starting centerline in 15s (after daemon restart)..."
-    sleep 15
+    # Poll Nav2 readiness, then start centerline.
+    # Must wait for benchmark's internal retry loop to settle.
+    echo "[stage4b] Waiting for Nav2 (polling /navigate_to_pose)..."
+    NAV2_READY=false
+    for i in $(seq 1 30); do
+      if timeout 3 ros2 node list 2>/dev/null | grep -q "/bt_navigator"; then
+        NAV2_READY=true
+        break
+      fi
+      sleep 10
+    done
+    if ! ${NAV2_READY}; then
+      echo "[stage4b] FAILED: Nav2 not ready after 300s"
+      kill "${BENCH_PID}" 2>/dev/null || true
+      cleanup_centerline
+      exit 1
+    fi
+    echo "[stage4b] Nav2 ready, starting centerline..."
     ros2 launch tunnel_centerline_extractor centerline_extractor.launch.py &
     CENTERLINE_PID=$!
     echo "[stage4b] Centerline PID=${CENTERLINE_PID}"
 
-    # Hard gate: verify geometry topics within GEOMETRY_GATE_SECONDS.
+    # Hard gate: verify geometry topics.
     GATE_START=$(date +%s)
     MAP_OK=false
     RISK_OK=false
@@ -80,7 +93,6 @@ for variant in "${VARIANTS[@]}"; do
     done
     if ! ${MAP_OK} || ! ${RISK_OK}; then
       echo "[stage4b] FAILED: geometry topics not ready after ${GEOMETRY_GATE_SECONDS}s"
-      echo "[stage4b] distance_map=${MAP_OK} risk_map=${RISK_OK}"
       kill "${BENCH_PID}" 2>/dev/null || true
       kill "${CENTERLINE_PID}" 2>/dev/null || true
       cleanup_centerline
