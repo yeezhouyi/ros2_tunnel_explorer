@@ -47,10 +47,12 @@ for variant in "${VARIANTS[@]}"; do
 
     BENCH_PID=$!
 
-    # Start centerline immediately — it subscribes to /map and publishes
-    # when ready.  First goal may fall back to Stage 3D while centerline
-    # processes the initial map (~110 s); subsequent goals use geometry.
-    echo "[stage4b] Starting centerline immediately..."
+    # Start centerline AFTER benchmark cleanup (which kills ROS daemon).
+    # The daemon restarts when the simulation launches (~T+2-5s).
+    # We wait 15s so the centerline connects to the new daemon, not the
+    # one that gets killed by cleanup_simulation.sh.
+    echo "[stage4b] Starting centerline in 15s (after daemon restart)..."
+    sleep 15
     ros2 launch tunnel_centerline_extractor centerline_extractor.launch.py &
     CENTERLINE_PID=$!
     echo "[stage4b] Centerline PID=${CENTERLINE_PID}"
