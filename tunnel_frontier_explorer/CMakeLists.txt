@@ -21,6 +21,8 @@ add_library(frontier_detection STATIC
   src/frontier_detector.cpp
   src/frontier_blacklist.cpp
   src/frontier_goal_selector.cpp
+  src/frontier_scorer.cpp
+  src/frontier_visit_history.cpp
 )
 
 target_include_directories(frontier_detection
@@ -104,6 +106,24 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_frontier_goal_selector frontier_detection)
   target_include_directories(test_frontier_goal_selector PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  # ── FrontierScorer tests ─────────────────────────────────────────────
+  ament_add_gtest(test_frontier_scorer
+    test/test_frontier_scorer.cpp
+  )
+  target_link_libraries(test_frontier_scorer frontier_detection)
+  target_include_directories(test_frontier_scorer PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  # ── FrontierVisitHistory tests ───────────────────────────────────────
+  ament_add_gtest(test_frontier_visit_history
+    test/test_frontier_visit_history.cpp
+  )
+  target_link_libraries(test_frontier_visit_history frontier_detection)
+  target_include_directories(test_frontier_visit_history PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 endif()

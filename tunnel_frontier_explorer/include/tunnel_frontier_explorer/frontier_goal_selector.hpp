@@ -44,6 +44,17 @@ struct GoalSelectionResult
   std::vector<Point2D> too_close_goals;
 };
 
+/// Result of selectAll() — all accepted candidates, not just the best one.
+struct AllCandidatesResult
+{
+  /// All clusters that passed the min-goal-distance filter.
+  std::vector<FrontierCluster> candidates;
+
+  /// Representative positions of clusters that were rejected because ALL of
+  /// their frontier cells were too close to the robot.
+  std::vector<Point2D> too_close_goals;
+};
+
 /// Pure-algorithm goal selector that filters frontier clusters by minimum
 /// distance and finds alternative representative cells when the original is
 /// too close to the robot.
@@ -75,11 +86,21 @@ public:
     const GridMap & map,
     const Point2D & robot_position) const;
 
-private:
-  FrontierGoalSelectorConfig config_;
+  /// Like select() but returns ALL accepted candidates instead of only the
+  /// nearest.  Clusters are modified in-place (representative may be updated).
+  ///
+  /// Candidates are returned with goal_distance_to_robot populated, sorted
+  /// by goal distance ascending (nearest first).
+  AllCandidatesResult selectAll(
+    std::vector<FrontierCluster> & clusters,
+    const GridMap & map,
+    const Point2D & robot_position) const;
 
   /// Convert grid (row, col) to world coordinates (mirrors FrontierDetector).
   static Point2D gridToWorld(const GridMap & map, int row, int col);
+
+private:
+  FrontierGoalSelectorConfig config_;
 };
 
 }  // namespace tunnel_frontier_explorer

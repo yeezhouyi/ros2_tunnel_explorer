@@ -18,6 +18,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -33,6 +34,8 @@
 #include "tunnel_frontier_explorer/frontier_cluster.hpp"
 #include "tunnel_frontier_explorer/frontier_detector.hpp"
 #include "tunnel_frontier_explorer/frontier_goal_selector.hpp"
+#include "tunnel_frontier_explorer/frontier_scorer.hpp"
+#include "tunnel_frontier_explorer/frontier_visit_history.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -96,6 +99,8 @@ private:
   FrontierDetector detector_;
   FrontierBlacklist blacklist_;
   FrontierGoalSelector goal_selector_;
+  FrontierScorer scorer_;
+  FrontierVisitHistory visit_history_;
 
   // ── Parameters ───────────────────────────────────────────────────────
   double exploration_period_seconds_;
@@ -109,11 +114,55 @@ private:
   double blacklist_timeout_seconds_;
   bool orient_goal_toward_frontier_;
   double min_goal_distance_meters_;
+  bool goal_projection_enabled_;
+  double goal_projection_distance_;
+  double goal_projection_min_remaining_distance_;
+  double goal_success_cooldown_seconds_;
+  double goal_success_cooldown_radius_;
+
+  // Stage 3D: entrance-loop recovery
+  bool loop_detection_enabled_;
+  int loop_window_size_;
+  int loop_unique_bins_threshold_;
+  int loop_min_successes_;
+  double loop_bin_size_;
+  bool recovery_probe_enabled_;
+  std::vector<double> recovery_probe_distances_;
+  std::vector<double> recovery_probe_angle_offsets_rad_;
+  double recovery_probe_cooldown_seconds_;
+  int recovery_max_attempts_;
+
+  // ── Goal safety projection ──────────────────────────────────────
+  std::optional<Point2D> projectGoalTowardRobot(
+    const Point2D & goal, const Point2D & robot,
+    const nav_msgs::msg::OccupancyGrid & map);
+
+  // ── Stage 3D: entrance-loop recovery ────────────────────────────
+  double getRobotYaw();
+  bool detectLocalLoop() const;
+  std::optional<Point2D> generateRecoveryProbe(
+    const Point2D & robot, double yaw,
+    const nav_msgs::msg::OccupancyGrid & map);
+  void recordGoalBin(const Point2D & goal, bool succeeded);
+  void resetRecoveryState();
   std::string map_topic_;
   std::string global_frame_;
   std::string robot_base_frame_;
   std::string action_server_name_;
   std::string marker_topic_;
+
+  // Stage 2B parameters
+  std::string selection_strategy_;
+  double information_gain_radius_meters_;
+  double revisit_radius_meters_;
+  int max_revisit_count_;
+  double weight_information_gain_;
+  double weight_distance_;
+  double weight_revisit_;
+
+  // ── Scored frontier markers ──────────────────────────────────────────
+  void publishScoredFrontierMarkers(
+    const std::vector<ScoredGoal> & scored);
 
   // ── State ────────────────────────────────────────────────────────────
   ExplorationState state_ = ExplorationState::WAITING_FOR_MAP;
@@ -126,6 +175,33 @@ private:
   // Consecutive empty frontier cycles before entering COMPLETED.
   std::size_t frontier_empty_count_ = 0;
   static constexpr std::size_t k_max_empty_cycles_ = 10;
+
+  // Consecutive cycles where all frontiers are suppressed (blacklisted
+  // or inside success cooldown regions).  After enough consecutive
+  // suppressed cycles the explorer declares completion rather than
+  // spinning forever re-dispatching the same entrance-area points.
+  std::size_t all_suppressed_count_ = 0;
+  // Must outlast the success cooldown (120 s / 1 s per cycle = 120)
+  // plus margin for the map to resolve, otherwise we declare completion
+  // while the cooldown is still active — a false positive.
+  static constexpr std::size_t k_max_all_suppressed_cycles_ = 180;
+
+  // ── Stage 3D sliding-window loop tracking ──────────────────────
+  struct GoalBinRecord {
+    int bin_x;
+    int bin_y;
+    bool succeeded;
+  };
+  std::deque<GoalBinRecord> recent_goal_bins_;
+  bool current_goal_is_recovery_ = false;
+
+  // ── Stage 3D recovery probe state ──────────────────────────────
+  int loop_detected_count_ = 0;
+  int recovery_probe_count_ = 0;
+  int recovery_success_count_ = 0;
+  int recovery_failure_count_ = 0;
+  rclcpp::Time recovery_probe_last_time_{0, 0, RCL_ROS_TIME};
+  int recovery_attempt_count_ = 0;
 };
 
 }  // namespace tunnel_frontier_explorer

@@ -44,3 +44,14 @@
     recovery_probe_angle_offsets_deg: [0.0, 20.0, -20.0, 35.0, -35.0]
     recovery_probe_cooldown_seconds: 30.0
     recovery_max_attempts: 3
+
+    # ── Stage 2C: revisit_radius 0.50 → 0.75 ──────────────────────────────
+    selection_strategy: information_gain_revisit
+
+    information_gain_radius_meters: 0.75
+    revisit_radius_meters: 0.75
+    max_revisit_count: 3
+
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5

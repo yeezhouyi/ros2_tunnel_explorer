@@ -1,0 +1,324 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="default">
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="ground_link">
+        <collision name="ground_collision">
+          <geometry>
+            <box>
+              <size>20 20 0.01</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="ground_visual">
+          <geometry>
+            <box>
+              <size>20 20 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.45 0.45 0.45 1</ambient>
+            <diffuse>0.45 0.45 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="branching_tunnel_y">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+
+      <link name="walls">
+        <!-- Trunk side slabs: thick solid blocks so only the 2.5m corridor
+             interior (x ∈ [-1.25, 1.25]) is free space. Any lidar leakage past
+             the corridor boundary hits solid material immediately. -->
+        <collision name="trunk_left_slab_collision">
+          <pose>-2.5 3.25 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 8.5 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="trunk_left_slab_visual">
+          <pose>-2.5 3.25 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 8.5 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <collision name="trunk_right_slab_collision">
+          <pose>2.5 3.25 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 8.5 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="trunk_right_slab_visual">
+          <pose>2.5 3.25 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 8.5 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- Back wall at y=0.0: prevents rearward frontier generation.
+             Sized to just cover trunk width (2.5m spans x∈[-1.25, 1.25]). -->
+        <collision name="back_wall_collision">
+          <pose>0 0.0 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="back_wall_visual">
+          <pose>0 0.0 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- Left branch outer thick slab: inner face at corridor boundary,
+             extends 2.0m outward so exterior space is solid, not navigable. -->
+        <collision name="left_branch_outer_collision">
+          <pose>-3.249 7.627 1.0 0 0 2.094395</pose>
+          <geometry>
+            <box>
+              <size>6.5 2.0 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="left_branch_outer_visual">
+          <pose>-3.249 7.627 1.0 0 0 2.094395</pose>
+          <geometry>
+            <box>
+              <size>6.5 2.0 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <collision name="left_branch_inner_collision">
+          <pose>-0.153 9.415 1.0 0 0 2.094395</pose>
+          <geometry>
+            <box>
+              <size>6.5 0.15 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="left_branch_inner_visual">
+          <pose>-0.153 9.415 1.0 0 0 2.094395</pose>
+          <geometry>
+            <box>
+              <size>6.5 0.15 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- Right branch, centerline from junction (0, 6.5), yaw = 60 deg = 1.047 rad. -->
+        <collision name="right_branch_inner_collision">
+          <pose>0.154 9.415 1.0 0 0 1.047198</pose>
+          <geometry>
+            <box>
+              <size>6.5 0.15 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="right_branch_inner_visual">
+          <pose>0.154 9.415 1.0 0 0 1.047198</pose>
+          <geometry>
+            <box>
+              <size>6.5 0.15 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <collision name="right_branch_outer_collision">
+          <pose>3.249 7.627 1.0 0 0 1.047198</pose>
+          <geometry>
+            <box>
+              <size>6.5 2.0 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="right_branch_outer_visual">
+          <pose>3.249 7.627 1.0 0 0 1.047198</pose>
+          <geometry>
+            <box>
+              <size>6.5 2.0 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- Junction filler walls: seal gap between vertical trunk walls and
+             angled branch outer walls at the junction. Without these, the lidar
+             can see through the geometric gap to the exterior. -->
+        <collision name="left_junction_filler_collision">
+          <pose>-1.40 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="left_junction_filler_visual">
+          <pose>-1.40 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <collision name="right_junction_filler_collision">
+          <pose>1.40 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="right_junction_filler_visual">
+          <pose>1.40 6.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.3 3.5 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <!-- Branch end caps: closed ends so frontiers have clean termination. -->
+        <collision name="left_branch_end_collision">
+          <pose>-2.925 11.567 1.0 0 0 2.094395</pose>
+          <geometry>
+            <box>
+              <size>0.15 2.8 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="left_branch_end_visual">
+          <pose>-2.925 11.567 1.0 0 0 2.094395</pose>
+          <geometry>
+            <box>
+              <size>0.15 2.8 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+
+        <collision name="right_branch_end_collision">
+          <pose>2.925 11.567 1.0 0 0 1.047198</pose>
+          <geometry>
+            <box>
+              <size>0.15 2.8 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="right_branch_end_visual">
+          <pose>2.925 11.567 1.0 0 0 1.047198</pose>
+          <geometry>
+            <box>
+              <size>0.15 2.8 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+        <!-- Central wedge block: fills the triangular gap between the two branch
+             inner walls above the junction, preventing lidar from seeing through
+             the bifurcation to exterior space. Narrowed for 2.5m corridor since
+             inner walls sit closer together. -->
+        <collision name="central_wedge_collision">
+          <pose>0 9.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.15 2.0 2.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="central_wedge_visual">
+          <pose>0 9.5 1.0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.15 2.0 2.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

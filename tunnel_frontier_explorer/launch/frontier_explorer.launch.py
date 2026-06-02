@@ -16,20 +16,31 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory('tunnel_frontier_explorer')
-    params_file = os.path.join(pkg_dir, 'config', 'frontier_explorer_params.yaml')
+
+    declare_params_file = DeclareLaunchArgument(
+        'params_file',
+        default_value=os.path.join(
+            pkg_dir, 'config', 'frontier_explorer_params.yaml'),
+        description='Path to frontier explorer YAML parameter file',
+    )
 
     node = Node(
         package='tunnel_frontier_explorer',
         executable='tunnel_frontier_explorer',
         name='tunnel_frontier_explorer',
-        parameters=[params_file],
+        parameters=[LaunchConfiguration('params_file')],
         output='screen',
         emulate_tty=True,
     )
 
-    return LaunchDescription([node])
+    return LaunchDescription([
+        declare_params_file,
+        node,
+    ])
