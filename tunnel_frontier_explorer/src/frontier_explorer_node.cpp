@@ -428,7 +428,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
               "Exploration stalled: local loop detected, "
               "no safe recovery probe after %d attempts",
               recovery_attempt_count_);
-            transitionTo(ExplorationState::COMPLETED);
+            transitionTo(ExplorationState::STALLED);
             return;
           }
 
@@ -681,6 +681,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
       }
 
     case ExplorationState::COMPLETED:
+    case ExplorationState::STALLED:
       return;
   }
 }
@@ -1226,6 +1227,7 @@ const char * TunnelFrontierExplorerNode::stateName(ExplorationState s) const
     case ExplorationState::NAVIGATING:       return "NAVIGATING";
     case ExplorationState::COOLDOWN:         return "COOLDOWN";
     case ExplorationState::COMPLETED:        return "COMPLETED";
+    case ExplorationState::STALLED:          return "STALLED";
     default:                                 return "UNKNOWN";
   }
 }

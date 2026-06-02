@@ -436,6 +436,14 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
         break
       fi
 
+      # Explorer-level STALLED check (recovery probes exhausted)
+      if grep -q "Exploration stalled" "${EXPLORER_LOG}" 2>/dev/null; then
+        echo "[${SCRIPT_NAME}] Explorer declared STALLED — ending run"
+        STALL_DETECTED=true
+        STALLED_AFTER_SECONDS="${elapsed}"
+        break
+      fi
+
       # Completion check (only when --stop-on-completed true)
       if [ "${STOP_ON_COMPLETED}" = "true" ]; then
         if [ "${COMPLETION_DETECTED}" = "false" ]; then
@@ -451,26 +459,18 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
         fi
 
         if [ "${COMPLETION_DETECTED}" = "true" ]; then
-          # Only new goal dispatch resets the grace timer
-          current_goals="$(grep -c "Goal:" "${EXPLORER_LOG}" 2>/dev/null || echo 0)"
-          if [ "${COMPLETION_GOAL_COUNT}" -ge 0 ] && \
-             [ "${current_goals}" -gt "${COMPLETION_GOAL_COUNT}" ]; then
-            echo "[${SCRIPT_NAME}] New goals (${current_goals} > ${COMPLETION_GOAL_COUNT}) — exploration resumed"
-            COMPLETION_RESET_COUNT=$((COMPLETION_RESET_COUNT + 1))
-            COMPLETION_RESET_REASON="new_goal_dispatched"
-            COMPLETION_DETECTED=false
-            COMPLETION_GOAL_COUNT=-1
-            COMPLETION_AT_SEC=0
-          fi
-
-          # If still COMPLETED, check grace period
-          if [ "${COMPLETION_DETECTED}" = "true" ]; then
-            grace_elapsed=$((elapsed - COMPLETION_AT_SEC))
-            if [ "${grace_elapsed}" -ge "${COMPLETED_GRACE_SECONDS}" ]; then
-              STABLE_COMPLETION_DETECTED=true
-              echo "[${SCRIPT_NAME}] COMPLETED stable for ${grace_elapsed}s — ending run early"
-              break
-            fi
+          # Once "exploration complete" is logged, treat it as final.
+          # Late map messages may cause the explorer to briefly re-enter
+          # IDLE, but that's transient — it will re-complete within a few
+          # cycles.  Re-counting Goal: lines is fragile (old lines in the
+          # growing log can match), so we no longer reset on new goals.
+          grace_elapsed=$((elapsed - COMPLETION_AT_SEC))
+          remaining=$((DURATION - elapsed))
+          if [ "${grace_elapsed}" -ge "${COMPLETED_GRACE_SECONDS}" ] || \
+             [ "${remaining}" -lt "${COMPLETED_GRACE_SECONDS}" ]; then
+            STABLE_COMPLETION_DETECTED=true
+            echo "[${SCRIPT_NAME}] COMPLETED stable for ${grace_elapsed}s — ending run early"
+            break
           fi
         fi
       fi
@@ -600,6 +600,18 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
     TIMEOUT_LINES="${TIMEOUT_LINES:-0}"
     ABORTED_LINES="$(grep -cF "Navigation aborted" "${EXPLORER_LOG}" 2>/dev/null || true)"
     ABORTED_LINES="${ABORTED_LINES:-0}"
+
+    # ── Stage 3D recovery probe metrics ────────────────────────────────────
+    RECOVERY_PROBE_DISPATCHED="$(grep -cF "Recovery probe goal:" "${EXPLORER_LOG}" 2>/dev/null || true)"
+    RECOVERY_PROBE_DISPATCHED="${RECOVERY_PROBE_DISPATCHED:-0}"
+    RECOVERY_PROBE_SUCCEEDED="$(grep -cF "Recovery probe succeeded" "${EXPLORER_LOG}" 2>/dev/null || true)"
+    RECOVERY_PROBE_SUCCEEDED="${RECOVERY_PROBE_SUCCEEDED:-0}"
+    LOOP_DETECTED_COUNT="$(grep -cF "Local loop detected" "${EXPLORER_LOG}" 2>/dev/null || true)"
+    LOOP_DETECTED_COUNT="${LOOP_DETECTED_COUNT:-0}"
+    RECOVERY_PROBE_FAILED=0
+    if [ "${RECOVERY_PROBE_DISPATCHED}" -gt 0 ]; then
+      RECOVERY_PROBE_FAILED=$((RECOVERY_PROBE_DISPATCHED - RECOVERY_PROBE_SUCCEEDED))
+    fi
 
     # ── Unique goals via spatial binning ─────────────────────────────────
     # Bin each goal to BIN_SIZE grid, count unique bins
@@ -749,6 +761,15 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
 | Node crashes | ${NODE_CRASHES:-0} |
 | Nav2 lifecycle failures (end) | $(${NAV2_ALL_ACTIVE:-false} && echo 0 || echo 1) |
 
+### Stage 3D Recovery Probe
+
+| Metric | Value |
+|--------|-------|
+| Loop detected count | ${LOOP_DETECTED_COUNT:-0} |
+| Recovery probes dispatched | ${RECOVERY_PROBE_DISPATCHED:-0} |
+| Recovery probes succeeded | ${RECOVERY_PROBE_SUCCEEDED:-0} |
+| Recovery probes failed | ${RECOVERY_PROBE_FAILED:-0} |
+
 ### Rosbag
 
 | Metric | Value |
@@ -801,6 +822,10 @@ data = {
     'unique_goal_bins': ${UNIQUE_BINS:-0},
     'revisit_rate': ${REVISIT_RATE:-0.0},
     'navigation_goal_success_rate': ${REACH_RATE:-0.0},
+    'loop_detected_count': ${LOOP_DETECTED_COUNT:-0},
+    'recovery_probe_dispatched': ${RECOVERY_PROBE_DISPATCHED:-0},
+    'recovery_probe_succeeded': ${RECOVERY_PROBE_SUCCEEDED:-0},
+    'recovery_probe_failed': ${RECOVERY_PROBE_FAILED:-0},
     'explorer_params_file': '${EXPLORER_PARAMS_FILE}',
     'explorer_params_sha256': '${EXPLORER_PARAMS_SHA256}',
     'selection_strategy': '${EXPLORER_SELECTION_STRATEGY}'

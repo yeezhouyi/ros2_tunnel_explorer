@@ -28,7 +28,7 @@ benchmark_tools/bags/*.yaml
 
 # Benchmark artifacts (rosbags large, keep untracked)
 artifacts/
-src/
+/src/
 CMakeFiles/
 
 # Generated reports (track scripts, not output)
