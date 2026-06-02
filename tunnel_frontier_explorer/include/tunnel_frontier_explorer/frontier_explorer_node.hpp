@@ -18,6 +18,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -119,10 +120,31 @@ private:
   double goal_success_cooldown_seconds_;
   double goal_success_cooldown_radius_;
 
+  // Stage 3D: entrance-loop recovery
+  bool loop_detection_enabled_;
+  int loop_window_size_;
+  int loop_unique_bins_threshold_;
+  int loop_min_successes_;
+  double loop_bin_size_;
+  bool recovery_probe_enabled_;
+  std::vector<double> recovery_probe_distances_;
+  std::vector<double> recovery_probe_angle_offsets_rad_;
+  double recovery_probe_cooldown_seconds_;
+  int recovery_max_attempts_;
+
   // ── Goal safety projection ──────────────────────────────────────
   std::optional<Point2D> projectGoalTowardRobot(
     const Point2D & goal, const Point2D & robot,
     const nav_msgs::msg::OccupancyGrid & map);
+
+  // ── Stage 3D: entrance-loop recovery ────────────────────────────
+  double getRobotYaw();
+  bool detectLocalLoop() const;
+  std::optional<Point2D> generateRecoveryProbe(
+    const Point2D & robot, double yaw,
+    const nav_msgs::msg::OccupancyGrid & map);
+  void recordGoalBin(const Point2D & goal, bool succeeded);
+  void resetRecoveryState();
   std::string map_topic_;
   std::string global_frame_;
   std::string robot_base_frame_;
@@ -163,6 +185,23 @@ private:
   // plus margin for the map to resolve, otherwise we declare completion
   // while the cooldown is still active — a false positive.
   static constexpr std::size_t k_max_all_suppressed_cycles_ = 180;
+
+  // ── Stage 3D sliding-window loop tracking ──────────────────────
+  struct GoalBinRecord {
+    int bin_x;
+    int bin_y;
+    bool succeeded;
+  };
+  std::deque<GoalBinRecord> recent_goal_bins_;
+  bool current_goal_is_recovery_ = false;
+
+  // ── Stage 3D recovery probe state ──────────────────────────────
+  int loop_detected_count_ = 0;
+  int recovery_probe_count_ = 0;
+  int recovery_success_count_ = 0;
+  int recovery_failure_count_ = 0;
+  rclcpp::Time recovery_probe_last_time_{0, 0, RCL_ROS_TIME};
+  int recovery_attempt_count_ = 0;
 };
 
 }  // namespace tunnel_frontier_explorer

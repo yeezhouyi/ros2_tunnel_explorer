@@ -19,8 +19,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -85,6 +87,34 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     "goal_success_cooldown_seconds", 120.0);
   goal_success_cooldown_radius_ = declare_parameter<double>(
     "goal_success_cooldown_radius", 1.0);
+
+  // -- Stage 3D: entrance-loop recovery -------------------------------------
+  loop_detection_enabled_ = declare_parameter<bool>(
+    "loop_detection_enabled", true);
+  loop_window_size_ = declare_parameter<int>(
+    "loop_window_size", 6);
+  loop_unique_bins_threshold_ = declare_parameter<int>(
+    "loop_unique_bins_threshold", 2);
+  loop_min_successes_ = declare_parameter<int>(
+    "loop_min_successes", 3);
+  loop_bin_size_ = declare_parameter<double>(
+    "loop_bin_size", 0.75);
+  recovery_probe_enabled_ = declare_parameter<bool>(
+    "recovery_probe_enabled", true);
+  recovery_probe_distances_ = declare_parameter<std::vector<double>>(
+    "recovery_probe_distances", {1.2, 1.0, 0.8});
+  {
+    auto angles_deg = declare_parameter<std::vector<double>>(
+      "recovery_probe_angle_offsets_deg", {0.0, 20.0, -20.0, 35.0, -35.0});
+    recovery_probe_angle_offsets_rad_.clear();
+    for (double deg : angles_deg) {
+      recovery_probe_angle_offsets_rad_.push_back(deg * M_PI / 180.0);
+    }
+  }
+  recovery_probe_cooldown_seconds_ = declare_parameter<double>(
+    "recovery_probe_cooldown_seconds", 30.0);
+  recovery_max_attempts_ = declare_parameter<int>(
+    "recovery_max_attempts", 3);
 
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
@@ -298,6 +328,122 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         frontier_empty_count_ = 0;
         all_suppressed_count_ = 0;
 
+      // ── Stage 3D: entrance-loop recovery ──────────────────────
+      // If recent goal history shows local oscillation (≤2 unique
+      // bins with ≥3 recent successes), skip normal frontier
+      // selection and send a forward recovery probe instead.
+      if (loop_detection_enabled_ && detectLocalLoop()) {
+        ++loop_detected_count_;
+
+        const auto now = this->now();
+        const double since_last_probe =
+          (now - recovery_probe_last_time_).seconds();
+        const bool in_cooldown =
+          recovery_probe_cooldown_seconds_ > 0.0 &&
+          since_last_probe < recovery_probe_cooldown_seconds_;
+
+        if (!in_cooldown) {
+          const double robot_yaw = getRobotYaw();
+          auto probe = generateRecoveryProbe(
+            robot_pose, robot_yaw, *latest_map_);
+
+          if (probe) {
+            ++recovery_probe_count_;
+            recovery_probe_last_time_ = now;
+            ++recovery_attempt_count_;
+            current_goal_is_recovery_ = true;
+
+            RCLCPP_INFO(get_logger(),
+              "Recovery probe goal: (%.2f, %.2f) d=%.2f a=%.1fdeg "
+              "(loop bins≤%d succ≥%d attempt %d/%d)",
+              probe->x, probe->y,
+              std::hypot(probe->x - robot_pose.x,
+                         probe->y - robot_pose.y),
+              std::atan2(probe->y - robot_pose.y,
+                         probe->x - robot_pose.x) * 180.0 / M_PI,
+              loop_unique_bins_threshold_, loop_min_successes_,
+              recovery_attempt_count_, recovery_max_attempts_);
+
+            // Dispatch recovery probe — skip frontier selection & projection.
+            auto goal_msg = nav2_msgs::action::NavigateToPose::Goal();
+            goal_msg.pose.header.frame_id = global_frame_;
+            goal_msg.pose.header.stamp = this->now();
+            goal_msg.pose.pose.position.x = probe->x;
+            goal_msg.pose.pose.position.y = probe->y;
+            goal_msg.pose.pose.position.z = 0.0;
+            const double goal_yaw = std::atan2(
+              probe->y - robot_pose.y, probe->x - robot_pose.x);
+            goal_msg.pose.pose.orientation.z = std::sin(goal_yaw * 0.5);
+            goal_msg.pose.pose.orientation.w = std::cos(goal_yaw * 0.5);
+
+            current_goal_ = *probe;
+            navigating_start_time_ = this->now();
+
+            auto send_opts = rclcpp_action::Client<
+              nav2_msgs::action::NavigateToPose>::SendGoalOptions();
+            send_opts.goal_response_callback =
+              [this](const GoalHandle::SharedPtr & h) {goalResponseCallback(h);};
+            send_opts.feedback_callback =
+              [this](GoalHandle::SharedPtr handle,
+               const std::shared_ptr<
+                 const nav2_msgs::action::NavigateToPose::Feedback> & fb)
+              {feedbackCallback(handle, fb);};
+            send_opts.result_callback =
+              [this](const GoalHandle::WrappedResult & r) {resultCallback(r);};
+
+            action_client_->async_send_goal(goal_msg, send_opts);
+            transitionTo(ExplorationState::NAVIGATING);
+
+            // Markers: show recovery probe as cyan sphere.
+            publishMarkers(
+              clusters, blacklisted_positions, *probe, {});
+            {
+              visualization_msgs::msg::Marker m;
+              m.header.frame_id = global_frame_;
+              m.header.stamp = this->now();
+              m.ns = "recovery_probe";
+              m.id = 0;
+              m.type = visualization_msgs::msg::Marker::SPHERE;
+              m.action = visualization_msgs::msg::Marker::ADD;
+              m.pose.position.x = probe->x;
+              m.pose.position.y = probe->y;
+              m.pose.position.z = 0.0;
+              m.pose.orientation.w = 1.0;
+              m.scale.x = 0.30; m.scale.y = 0.30; m.scale.z = 0.30;
+              m.color.a = 0.9;
+              m.color.r = 0.0; m.color.g = 1.0; m.color.b = 1.0;
+              visualization_msgs::msg::MarkerArray arr;
+              arr.markers.push_back(std::move(m));
+              marker_pub_->publish(std::move(arr));
+            }
+            return;
+          }
+
+          // No safe probe found.
+          recovery_probe_last_time_ = now;
+          ++recovery_attempt_count_;
+
+          if (recovery_attempt_count_ >= recovery_max_attempts_) {
+            RCLCPP_INFO(get_logger(),
+              "Exploration stalled: local loop detected, "
+              "no safe recovery probe after %d attempts",
+              recovery_attempt_count_);
+            transitionTo(ExplorationState::COMPLETED);
+            return;
+          }
+
+          RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 10000,
+            "Local loop detected — no safe recovery probe "
+            "(attempt %d/%d), waiting for map update",
+            recovery_attempt_count_, recovery_max_attempts_);
+          return;
+        }
+        // In cooldown — do nothing this cycle.
+        return;
+      }
+      // No loop detected or detection disabled — reset recovery state.
+      resetRecoveryState();
+
       // Select best goal — strategy-dependent.
         Point2D goal_pt;
         std::optional<Point2D> selected_for_marker;
@@ -497,15 +643,26 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           if (elapsed >= goal_timeout_seconds_) {
             RCLCPP_WARN(
               get_logger(), "Goal timed out after %.1f s — cancelling", elapsed);
-            // Blacklist before cancelling to prevent re-selection.
-            const auto t = std::chrono::steady_clock::now();
-            blacklist_.add(
-              *current_goal_, t, blacklist_radius_,
-              std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::duration<double>(blacklist_timeout_seconds_)));
-            RCLCPP_INFO(
-              get_logger(), "Blacklisted (%.2f, %.2f) for %.0f s",
-              current_goal_->x, current_goal_->y, blacklist_timeout_seconds_);
+            // ── Stage 3D recovery tracking ───────────────────────────
+            if (current_goal_is_recovery_) {
+              ++recovery_failure_count_;
+            }
+            // ── Goal bin tracking ─────────────────────────────────────
+            if (current_goal_) {
+              recordGoalBin(*current_goal_, false);
+            }
+            // Blacklist before cancelling to prevent re-selection
+            // (frontier goals only — not recovery probes).
+            if (!current_goal_is_recovery_) {
+              const auto t = std::chrono::steady_clock::now();
+              blacklist_.add(
+                *current_goal_, t, blacklist_radius_,
+                std::chrono::duration_cast<std::chrono::seconds>(
+                  std::chrono::duration<double>(blacklist_timeout_seconds_)));
+              RCLCPP_INFO(
+                get_logger(), "Blacklisted (%.2f, %.2f) for %.0f s",
+                current_goal_->x, current_goal_->y, blacklist_timeout_seconds_);
+            }
             if (current_goal_handle_) {
               action_client_->async_cancel_goal(current_goal_handle_);
             }
@@ -574,10 +731,27 @@ void TunnelFrontierExplorerNode::resultCallback(
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       RCLCPP_INFO(get_logger(), "Navigation to goal succeeded");
+
+      // ── Stage 3D recovery metrics ─────────────────────────────
+      if (current_goal_is_recovery_) {
+        ++recovery_success_count_;
+        RCLCPP_INFO(get_logger(),
+          "Recovery probe succeeded (%d/%d probes succeeded)",
+          recovery_success_count_, recovery_probe_count_);
+      }
+
+      // ── Goal bin tracking ─────────────────────────────────────
+      if (current_goal_) {
+        recordGoalBin(*current_goal_, true);
+      }
+
       // Temporarily blacklist the original frontier point on success
       // to prevent repeatedly re-selecting the same frontier before
       // new map data reveals fresh cells.
-      if (current_goal_ && goal_success_cooldown_seconds_ > 0.0) {
+      // Do NOT blacklist recovery probes — they are already in
+      // known free space.
+      if (current_goal_ && !current_goal_is_recovery_ &&
+          goal_success_cooldown_seconds_ > 0.0) {
         const auto t = std::chrono::steady_clock::now();
         blacklist_.add(
           *current_goal_, t, goal_success_cooldown_radius_,
@@ -599,8 +773,16 @@ void TunnelFrontierExplorerNode::resultCallback(
           result.result->error_code,
           result.result->error_msg.c_str());
         }
-      // Blacklist the failed goal.
+        // ── Stage 3D recovery tracking ───────────────────────────
+        if (current_goal_is_recovery_) {
+          ++recovery_failure_count_;
+        }
+        // ── Goal bin tracking ─────────────────────────────────────
         if (current_goal_) {
+          recordGoalBin(*current_goal_, false);
+        }
+      // Blacklist the failed goal (frontier goals only).
+        if (current_goal_ && !current_goal_is_recovery_) {
           const auto t = std::chrono::steady_clock::now();
           blacklist_.add(
           *current_goal_, t, blacklist_radius_,
@@ -616,6 +798,9 @@ void TunnelFrontierExplorerNode::resultCallback(
     case rclcpp_action::ResultCode::CANCELED:
       RCLCPP_INFO(get_logger(),
         "Navigation canceled — not blacklisting");
+      if (current_goal_ && current_goal_is_recovery_) {
+        ++recovery_failure_count_;
+      }
       break;
 
     default:
@@ -627,6 +812,7 @@ void TunnelFrontierExplorerNode::resultCallback(
 
   current_goal_ = std::nullopt;
   current_goal_handle_.reset();
+  current_goal_is_recovery_ = false;
   transitionTo(ExplorationState::COOLDOWN);
 }
 
@@ -647,6 +833,109 @@ bool TunnelFrontierExplorerNode::getRobotPose(Point2D & robot_pose)
       global_frame_.c_str(), robot_base_frame_.c_str(), ex.what());
     return false;
   }
+}
+
+// ── getRobotYaw ────────────────────────────────────────────────────
+
+double TunnelFrontierExplorerNode::getRobotYaw()
+{
+  try {
+    const auto tf = tf_buffer_.lookupTransform(
+      global_frame_, robot_base_frame_, tf2::TimePointZero);
+    const auto & q = tf.transform.rotation;
+    const double siny = 2.0 * (q.w * q.z + q.x * q.y);
+    const double cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+    return std::atan2(siny, cosy);
+  } catch (const tf2::TransformException & ex) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "TF yaw lookup failed: %s", ex.what());
+    return 0.0;
+  }
+}
+
+// ── detectLocalLoop ────────────────────────────────────────────────
+//
+// Checks whether the recent goal history shows entrance-area
+// oscillation: the sliding window is full, unique spatial bins
+// within the window are few, and most recent goals succeeded.
+
+bool TunnelFrontierExplorerNode::detectLocalLoop() const
+{
+  if (!loop_detection_enabled_) return false;
+  if (static_cast<int>(recent_goal_bins_.size()) < loop_window_size_)
+    return false;
+
+  std::set<std::pair<int, int>> unique;
+  int successes = 0;
+  for (const auto & rec : recent_goal_bins_) {
+    unique.insert({rec.bin_x, rec.bin_y});
+    if (rec.succeeded) ++successes;
+  }
+
+  return (static_cast<int>(unique.size()) <= loop_unique_bins_threshold_) &&
+         (successes >= loop_min_successes_);
+}
+
+// ── generateRecoveryProbe ──────────────────────────────────────────
+//
+// When a local loop is detected, try distance×angle combinations
+// forward from the robot's current pose.  Returns the first candidate
+// that lands in known free space (occupancy 0).
+
+std::optional<Point2D> TunnelFrontierExplorerNode::generateRecoveryProbe(
+  const Point2D & robot, double yaw,
+  const nav_msgs::msg::OccupancyGrid & map)
+{
+  if (!recovery_probe_enabled_) return std::nullopt;
+
+  for (double dist : recovery_probe_distances_) {
+    for (double angle_offset : recovery_probe_angle_offsets_rad_) {
+      double probe_yaw = yaw + angle_offset;
+      Point2D probe;
+      probe.x = robot.x + dist * std::cos(probe_yaw);
+      probe.y = robot.y + dist * std::sin(probe_yaw);
+
+      const double ox = map.info.origin.position.x;
+      const double oy = map.info.origin.position.y;
+      const double res = map.info.resolution;
+      const int mx = static_cast<int>((probe.x - ox) / res);
+      const int my = static_cast<int>((probe.y - oy) / res);
+      const int w = static_cast<int>(map.info.width);
+      const int h = static_cast<int>(map.info.height);
+      if (mx < 0 || mx >= w || my < 0 || my >= h) continue;
+
+      const int idx = my * w + mx;
+      if (idx >= 0 && idx < static_cast<int>(map.data.size()) &&
+          map.data[idx] == 0) {
+        return probe;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+// ── recordGoalBin ──────────────────────────────────────────────────
+
+void TunnelFrontierExplorerNode::recordGoalBin(
+  const Point2D & goal, bool succeeded)
+{
+  GoalBinRecord rec;
+  rec.bin_x = static_cast<int>(std::floor(goal.x / loop_bin_size_));
+  rec.bin_y = static_cast<int>(std::floor(goal.y / loop_bin_size_));
+  rec.succeeded = succeeded;
+  recent_goal_bins_.push_back(rec);
+  while (static_cast<int>(recent_goal_bins_.size()) > loop_window_size_) {
+    recent_goal_bins_.pop_front();
+  }
+}
+
+// ── resetRecoveryState ─────────────────────────────────────────────
+
+void TunnelFrontierExplorerNode::resetRecoveryState()
+{
+  recovery_attempt_count_ = 0;
+  current_goal_is_recovery_ = false;
 }
 
 // ── projectGoalTowardRobot ─────────────────────────────────────────
@@ -769,6 +1058,7 @@ void TunnelFrontierExplorerNode::publishMarkers(
   // ── Selected goal (red SPHERE) ─────────────────────────────────────
   markers.markers.push_back(make_deleteall("selected_goal"));
   markers.markers.push_back(make_deleteall("projected_goal"));
+  markers.markers.push_back(make_deleteall("recovery_probe"));
   if (selected_goal) {
     visualization_msgs::msg::Marker m;
     m.header.frame_id = global_frame_;

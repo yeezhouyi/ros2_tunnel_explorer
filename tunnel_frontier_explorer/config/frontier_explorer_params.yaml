@@ -32,3 +32,15 @@
     goal_projection_min_remaining_distance: 0.6
     goal_success_cooldown_seconds: 120.0
     goal_success_cooldown_radius: 1.0
+
+    # ── Stage 3D: entrance-loop recovery ──────────────────────────────
+    loop_detection_enabled: true
+    loop_window_size: 6
+    loop_unique_bins_threshold: 2
+    loop_min_successes: 3
+    loop_bin_size: 0.75
+    recovery_probe_enabled: true
+    recovery_probe_distances: [1.2, 1.0, 0.8]
+    recovery_probe_angle_offsets_deg: [0.0, 20.0, -20.0, 35.0, -35.0]
+    recovery_probe_cooldown_seconds: 30.0
+    recovery_max_attempts: 3
