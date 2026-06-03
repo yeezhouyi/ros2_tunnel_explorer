@@ -23,6 +23,7 @@
 | **4B** | **Tunnel-Aware Frontier Scoring** | **EVALUATED** — geometry reduces revisit (−6.9pp) and TTC (−18%) but completion regresses (80%→60%); experimental, not default |
 | **4B.1** | **Safe Geometry Bias** | **EVALUATED** — wall_risk_weak best: 60% completion (vs 20% baseline), 0 fallbacks, geometry pipeline solid |
 | **4B.2** | **Entrance Oscillation Detection** | **PASS** — detector flagged entrance oscillation in 1/3 smoke runs, 0 false positives in clean runs, 8/8 unit tests |
+| **4B.3** | **Oscillation Escape Response** | **SAFE INTEGRATION** — escape mode implemented, 2/3 smoke completion, detector didn't activate (conservative), 11/11 tests |
 
 ### Stage 1C Baseline Metrics
 
@@ -443,6 +444,7 @@ remained 100% across all stages.
 - [Stage 4B Tunnel-Aware Scoring Results](docs/stage4b_tunnel_aware_frontier_scoring_results.md)
 - [Stage 4B.1 Safe Geometry Bias Results](docs/stage4b1_safe_geometry_bias_results.md)
 - [Stage 4B.2 Entrance Oscillation Detection](docs/stage4b2_entrance_oscillation_detection.md)
+- [Stage 4B.3 Oscillation Escape Response](docs/stage4b3_oscillation_escape_response.md)
 
 ## Roadmap
 
@@ -453,6 +455,7 @@ remained 100% across all stages.
 | **Stage 4B** | Centerline + wall-risk features in frontier scorer | ✅ `stage4b-tunnel-aware-frontier-scoring` |
 | **Stage 4B.1** | Safe geometry bias — wall-risk penalty, completion 20%→60% | ✅ `stage4b1-safe-geometry-bias-eval` |
 | **Stage 4B.2** | Entrance oscillillation detection — rule-based detector, 1/3 smoke triggered | ✅ `stage4b2-entrance-oscillation-detection` |
+| **Stage 4B.3** | Oscillation escape response — soft penalty on entrance-cluster goals | 🔄 `stage4b3-oscillation-escape-response` |
 | **Stage 4C** | L / Y / T / cross / dead-end multi-topology benchmark suite | 📋 |
 | **Stage 5** | Nav2 Tunnel-Aware Planner plugin (wall risk + centerline deviation cost) | 📋 |
 | **Stage 6** | Sensor degradation, narrow passages, dynamic obstacles, rosbag validation | 📋 |
