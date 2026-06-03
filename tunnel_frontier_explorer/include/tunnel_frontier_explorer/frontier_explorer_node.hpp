@@ -159,6 +159,16 @@ private:
   double entrance_oscillation_min_revisit_ratio_;
   int entrance_oscillation_min_goals_to_check_;
 
+  // Stage 4B.3: oscillation escape mode
+  bool escape_mode_active_ = false;
+  int escape_mode_remaining_goals_ = 0;
+  Point2D oscillation_center_;
+  bool entrance_oscillation_response_enabled_;
+  int entrance_oscillation_escape_goals_;
+  double entrance_oscillation_suppression_radius_m_;
+  double entrance_oscillation_escape_penalty_;
+  void applyEscapeModePenalty(std::vector<ScoredGoal> & scored);
+
   // ── Goal safety projection ──────────────────────────────────────
   std::optional<Point2D> projectGoalTowardRobot(
     const Point2D & goal, const Point2D & robot,

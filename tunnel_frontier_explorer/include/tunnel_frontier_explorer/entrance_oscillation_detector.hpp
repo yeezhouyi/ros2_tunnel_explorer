@@ -88,6 +88,10 @@ public:
   /// Useful for populating GoalDispatchEvent.unique_bins before recording.
   int getCurrentUniqueBins() const;
 
+  /// Centroid of goal positions in the current window.
+  /// Returns {0,0} if window is empty.
+  Point2D getOscillationCenter() const;
+
 private:
   EntranceOscillationConfig config_;
   std::deque<GoalDispatchEvent> events_;

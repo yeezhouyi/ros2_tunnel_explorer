@@ -153,6 +153,16 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     entrance_oscillation_detector_ = EntranceOscillationDetector(osc_cfg);
   }
 
+  // -- Stage 4B.3: oscillillation escape mode ─────────────────────────────
+  entrance_oscillation_response_enabled_ = declare_parameter<bool>(
+    "entrance_oscillation_response_enabled", true);
+  entrance_oscillation_escape_goals_ = declare_parameter<int>(
+    "entrance_oscillation_escape_goals", 3);
+  entrance_oscillation_suppression_radius_m_ = declare_parameter<double>(
+    "entrance_oscillation_suppression_radius_m", 1.5);
+  entrance_oscillation_escape_penalty_ = declare_parameter<double>(
+    "entrance_oscillation_escape_penalty", 0.75);
+
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
     "selection_strategy", "nearest");
@@ -302,6 +312,64 @@ void TunnelFrontierExplorerNode::riskMapCallback(
   tunnel_geometry_.risk_map.data = msg->data;
 }
 
+// ── applyEscapeModePenalty ────────────────────────────────────────────────
+
+void TunnelFrontierExplorerNode::applyEscapeModePenalty(
+  std::vector<ScoredGoal> & scored)
+{
+  if (!escape_mode_active_ || scored.empty()) {return;}
+
+  // Check if ALL candidates are inside the oscillation radius.
+  // If so, skip penalty to avoid having no viable goal.
+  int outside_count = 0;
+  for (const auto & sg : scored) {
+    const double d = std::hypot(
+      sg.cluster.representative_world.x - oscillation_center_.x,
+      sg.cluster.representative_world.y - oscillation_center_.y);
+    if (d >= entrance_oscillation_suppression_radius_m_) {
+      outside_count++;
+    }
+  }
+  if (outside_count == 0) {
+    RCLCPP_INFO(get_logger(),
+      "[OscillationEscape] all %d candidates inside radius — skipping penalty",
+      static_cast<int>(scored.size()));
+    return;
+  }
+
+  // Apply penalty to candidates inside the oscillation radius.
+  int penalized = 0;
+  for (auto & sg : scored) {
+    const double d = std::hypot(
+      sg.cluster.representative_world.x - oscillation_center_.x,
+      sg.cluster.representative_world.y - oscillation_center_.y);
+    if (d < entrance_oscillation_suppression_radius_m_) {
+      sg.score -= entrance_oscillation_escape_penalty_;
+      penalized++;
+    }
+  }
+
+  // Re-sort by score descending (same comparator as scorer).
+  std::sort(scored.begin(), scored.end(),
+    [](const ScoredGoal & a, const ScoredGoal & b) {
+      if (std::abs(a.score - b.score) > 1e-9) {return a.score > b.score;}
+      if (std::abs(a.goal_distance_meters - b.goal_distance_meters) > 1e-9)
+        {return a.goal_distance_meters < b.goal_distance_meters;}
+      if (a.raw_information_gain != b.raw_information_gain)
+        {return a.raw_information_gain > b.raw_information_gain;}
+      if (a.cluster.representative_cell.row != b.cluster.representative_cell.row)
+        {return a.cluster.representative_cell.row < b.cluster.representative_cell.row;}
+      return a.cluster.representative_cell.col < b.cluster.representative_cell.col;
+    });
+
+  RCLCPP_INFO(get_logger(),
+    "[OscillationEscape] active=true remaining=%d center=(%.2f,%.2f) "
+    "radius=%.1f penalized=%d/%d",
+    escape_mode_remaining_goals_, oscillation_center_.x, oscillation_center_.y,
+    entrance_oscillation_suppression_radius_m_, penalized,
+    static_cast<int>(scored.size()));
+}
+
 // ── explorationTimerCallback ─────────────────────────────────────────────
 
 void TunnelFrontierExplorerNode::explorationTimerCallback()
@@ -408,6 +476,26 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         }
         frontier_empty_count_ = 0;
         all_suppressed_count_ = 0;
+
+      // ── Stage 4B.3: early oscillation evaluation ─────────────
+      OscillationStatus osc_status;
+      if (entrance_oscillation_enabled_) {
+        osc_status = entrance_oscillation_detector_.evaluate();
+        if (entrance_oscillation_response_enabled_ &&
+            osc_status.oscillating && !escape_mode_active_)
+        {
+          escape_mode_active_ = true;
+          escape_mode_remaining_goals_ = entrance_oscillation_escape_goals_;
+          oscillation_center_ =
+            entrance_oscillation_detector_.getOscillationCenter();
+          RCLCPP_INFO(get_logger(),
+            "[OscillationEscape] activated center=(%.2f,%.2f) "
+            "radius=%.2fm remaining=%d",
+            oscillation_center_.x, oscillation_center_.y,
+            entrance_oscillation_suppression_radius_m_,
+            escape_mode_remaining_goals_);
+        }
+      }
 
       // ── Stage 3D: entrance-loop recovery ──────────────────────
       // If recent goal history shows local oscillation (≤2 unique
@@ -607,6 +695,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           // Phase 3: score and rank.
           scored_frontiers = scorer_.scoreAndRank(
             post_blacklist, gm, robot_pose, visit_history_);
+          applyEscapeModePenalty(scored_frontiers);
           const auto & best = scored_frontiers.front();
           goal_pt = best.cluster.representative_world;
           selected_for_marker = goal_pt;
@@ -685,6 +774,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             return;
           }
 
+          applyEscapeModePenalty(scored_frontiers);
           const auto & best = scored_frontiers.front();
           goal_pt = best.cluster.representative_world;
           selected_for_marker = goal_pt;
@@ -757,6 +847,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
               scored_frontiers, tunnel_geometry_);
           }
 
+          applyEscapeModePenalty(scored_frontiers);
           const auto & best = scored_frontiers.front();
           goal_pt = best.cluster.representative_world;
           selected_for_marker = goal_pt;
@@ -877,7 +968,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           osc_event.unique_bins = unique_bins;
           entrance_oscillation_detector_.recordGoal(osc_event);
 
-          auto osc_status = entrance_oscillation_detector_.evaluate();
+          // Log oscillation status (use early osc_status to avoid double evaluate)
           if (osc_status.oscillating) {
             RCLCPP_WARN(get_logger(),
               "[EntranceOscillation] detected=true count=%d "
@@ -906,6 +997,16 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
 
         action_client_->async_send_goal(goal_msg, send_opts);
         transitionTo(ExplorationState::NAVIGATING);
+
+        // Stage 4B.3: decrement escape mode countdown
+        if (escape_mode_active_) {
+          escape_mode_remaining_goals_--;
+          if (escape_mode_remaining_goals_ <= 0) {
+            escape_mode_active_ = false;
+            RCLCPP_INFO(get_logger(),
+              "[OscillationEscape] mode deactivated after goal dispatch");
+          }
+        }
 
         publishMarkers(
           clusters, blacklisted_positions, selected_for_marker,

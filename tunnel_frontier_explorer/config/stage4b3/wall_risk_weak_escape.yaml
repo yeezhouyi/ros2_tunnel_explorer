@@ -1,0 +1,23 @@
+# Stage 4B.3: Oscillation Escape Mode
+# Based on Stage 4B.1 winner (wall_risk_weak) + escape mode response.
+/**:
+  ros__parameters:
+    # ── Stage 4B.1 winner: wall_risk_weak ──────────────────────────────
+    selection_strategy: tunnel_aware
+    weight_centerline_alignment: 0.0
+    weight_wall_risk: 0.3
+
+    # ── Stage 4B.2: entrance oscillillation detection ──────────────────
+    entrance_oscillation_enabled: true
+    entrance_oscillation_window_goals: 6
+    entrance_oscillation_radius_m: 2.0
+    entrance_oscillation_min_repeated_goals: 4
+    entrance_oscillation_max_unique_bins: 2
+    entrance_oscillation_min_revisit_ratio: 0.35
+    entrance_oscillation_min_goals_to_check: 4
+
+    # ── Stage 4B.3: oscillillation escape mode ─────────────────────────
+    entrance_oscillation_response_enabled: true
+    entrance_oscillation_escape_goals: 3
+    entrance_oscillation_suppression_radius_m: 1.5
+    entrance_oscillation_escape_penalty: 0.75

@@ -202,3 +202,53 @@ TEST(EntranceOscillation, EventCountIncrements)
   EXPECT_TRUE(s2.oscillating);
   EXPECT_EQ(det.eventCount(), 2u);
 }
+
+// ── Test 9: getOscillationCenter computes centroid ─────────────────────
+
+TEST(EntranceOscillation, GetOscillationCenterComputesCentroid)
+{
+  EntranceOscillationConfig cfg;
+  EntranceOscillationDetector det(cfg);
+
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(4.0, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.0, 4.0, 2, 0.0));
+  det.recordGoal(makeEvent(4.0, 4.0, 3, 0.0));
+
+  auto center = det.getOscillationCenter();
+  EXPECT_NEAR(center.x, 2.0, 1e-9);
+  EXPECT_NEAR(center.y, 2.0, 1e-9);
+}
+
+// ── Test 10: getOscillationCenter empty window ─────────────────────────
+
+TEST(EntranceOscillation, GetOscillationCenterEmptyWindow)
+{
+  EntranceOscillationConfig cfg;
+  EntranceOscillationDetector det(cfg);
+
+  auto center = det.getOscillationCenter();
+  EXPECT_NEAR(center.x, 0.0, 1e-9);
+  EXPECT_NEAR(center.y, 0.0, 1e-9);
+}
+
+// ── Test 11: getOscillationCenter with window trim ─────────────────────
+
+TEST(EntranceOscillation, GetOscillationCenterWithWindowTrim)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 3;
+  EntranceOscillationDetector det(cfg);
+
+  // Add 5 goals, only last 3 remain
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));  // trimmed
+  det.recordGoal(makeEvent(10.0, 10.0, 1, 0.0));  // trimmed
+  det.recordGoal(makeEvent(2.0, 0.0, 2, 0.0));
+  det.recordGoal(makeEvent(4.0, 0.0, 3, 0.0));
+  det.recordGoal(makeEvent(6.0, 0.0, 4, 0.0));
+
+  // Center should be average of last 3: (2+4+6)/3=4.0, y=0
+  auto center = det.getOscillationCenter();
+  EXPECT_NEAR(center.x, 4.0, 1e-9);
+  EXPECT_NEAR(center.y, 0.0, 1e-9);
+}

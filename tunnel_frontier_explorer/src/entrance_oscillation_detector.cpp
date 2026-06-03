@@ -52,6 +52,20 @@ int EntranceOscillationDetector::getCurrentUniqueBins() const
   return static_cast<int>(bins.size());
 }
 
+// ── getOscillationCenter ────────────────────────────────────────────────────
+
+Point2D EntranceOscillationDetector::getOscillationCenter() const
+{
+  if (events_.empty()) {return {0.0, 0.0};}
+  double sum_x = 0.0, sum_y = 0.0;
+  for (const auto & e : events_) {
+    sum_x += e.goal.x;
+    sum_y += e.goal.y;
+  }
+  const double n = static_cast<double>(events_.size());
+  return {sum_x / n, sum_y / n};
+}
+
 // ── evaluate ────────────────────────────────────────────────────────────────
 
 OscillationStatus EntranceOscillationDetector::evaluate()
