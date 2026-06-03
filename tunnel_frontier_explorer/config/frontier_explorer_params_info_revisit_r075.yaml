@@ -53,6 +53,11 @@
     entrance_oscillation_max_unique_bins: 2
     entrance_oscillation_min_revisit_ratio: 0.35
     entrance_oscillation_min_goals_to_check: 4
+    entrance_oscillation_detect_alternating_pair: true
+    entrance_oscillation_pair_cluster_radius_m: 0.75
+    entrance_oscillation_pair_max_spatial_radius_m: 1.5
+    entrance_oscillation_pair_min_cluster_count: 2
+    entrance_oscillation_pair_min_alternation_score: 0.5
 
     # ── Stage 4B.3: oscillillation escape mode ─────────────────────────
     entrance_oscillation_response_enabled: true

@@ -158,6 +158,12 @@ private:
   int entrance_oscillation_max_unique_bins_;
   double entrance_oscillation_min_revisit_ratio_;
   int entrance_oscillation_min_goals_to_check_;
+  // Stage 4B.4: alternating-pair detection
+  bool entrance_oscillation_detect_alternating_pair_;
+  double entrance_oscillation_pair_cluster_radius_m_;
+  double entrance_oscillation_pair_max_spatial_radius_m_;
+  int entrance_oscillation_pair_min_cluster_count_;
+  double entrance_oscillation_pair_min_alternation_score_;
 
   // Stage 4B.3: oscillation escape mode
   bool escape_mode_active_ = false;

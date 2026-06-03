@@ -46,7 +46,7 @@ struct OscillationStatus
   std::string reason;
 };
 
-/// Configuration for the entrance oscillation detector.
+/// Configuration for the entrance oscillillation detector.
 struct EntranceOscillationConfig
 {
   int window_goals = 6;
@@ -55,6 +55,23 @@ struct EntranceOscillationConfig
   int max_unique_bins = 2;
   double min_revisit_ratio = 0.35;
   int min_goals_to_check = 4;
+  // Type B: alternating-pair detection
+  bool detect_alternating_pair = true;
+  double pair_cluster_radius_m = 0.75;
+  double pair_max_spatial_radius_m = 1.5;
+  int pair_min_cluster_count = 2;
+  double pair_min_alternation_score = 0.5;
+};
+
+/// Result of alternating-pair oscillillation detection (Type B).
+struct AlternatingPairStatus
+{
+  bool detected = false;
+  int cluster_count = 0;
+  double alternation_score = 0.0;
+  Point2D cluster_a_center;
+  Point2D cluster_b_center;
+  std::string reason;
 };
 
 /// Detects entrance-area oscillation in goal dispatch patterns.
@@ -91,6 +108,10 @@ public:
   /// Centroid of goal positions in the current window.
   /// Returns {0,0} if window is empty.
   Point2D getOscillationCenter() const;
+
+  /// Detect Type B oscillillation: alternating pair of nearby goals.
+  /// Returns AlternatingPairStatus with detection result.
+  AlternatingPairStatus detectAlternatingPair() const;
 
 private:
   EntranceOscillationConfig config_;

@@ -141,6 +141,16 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     "entrance_oscillation_min_revisit_ratio", 0.35);
   entrance_oscillation_min_goals_to_check_ = declare_parameter<int>(
     "entrance_oscillation_min_goals_to_check", 4);
+  entrance_oscillation_detect_alternating_pair_ = declare_parameter<bool>(
+    "entrance_oscillation_detect_alternating_pair", true);
+  entrance_oscillation_pair_cluster_radius_m_ = declare_parameter<double>(
+    "entrance_oscillation_pair_cluster_radius_m", 0.75);
+  entrance_oscillation_pair_max_spatial_radius_m_ = declare_parameter<double>(
+    "entrance_oscillation_pair_max_spatial_radius_m", 1.5);
+  entrance_oscillation_pair_min_cluster_count_ = declare_parameter<int>(
+    "entrance_oscillation_pair_min_cluster_count", 2);
+  entrance_oscillation_pair_min_alternation_score_ = declare_parameter<double>(
+    "entrance_oscillation_pair_min_alternation_score", 0.5);
 
   {
     EntranceOscillationConfig osc_cfg;
@@ -150,6 +160,11 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     osc_cfg.max_unique_bins = entrance_oscillation_max_unique_bins_;
     osc_cfg.min_revisit_ratio = entrance_oscillation_min_revisit_ratio_;
     osc_cfg.min_goals_to_check = entrance_oscillation_min_goals_to_check_;
+    osc_cfg.detect_alternating_pair = entrance_oscillation_detect_alternating_pair_;
+    osc_cfg.pair_cluster_radius_m = entrance_oscillation_pair_cluster_radius_m_;
+    osc_cfg.pair_max_spatial_radius_m = entrance_oscillation_pair_max_spatial_radius_m_;
+    osc_cfg.pair_min_cluster_count = entrance_oscillation_pair_min_cluster_count_;
+    osc_cfg.pair_min_alternation_score = entrance_oscillation_pair_min_alternation_score_;
     entrance_oscillation_detector_ = EntranceOscillationDetector(osc_cfg);
   }
 

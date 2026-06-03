@@ -252,3 +252,164 @@ TEST(EntranceOscillation, GetOscillationCenterWithWindowTrim)
   EXPECT_NEAR(center.x, 4.0, 1e-9);
   EXPECT_NEAR(center.y, 0.0, 1e-9);
 }
+
+// ── Test 12: Detects alternating pair A B A B A B ─────────────────────
+
+TEST(EntranceOscillation, DetectsAlternatingPairABAB)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  cfg.detect_alternating_pair = true;
+  cfg.pair_cluster_radius_m = 0.75;
+  cfg.pair_max_spatial_radius_m = 1.5;
+  cfg.pair_min_cluster_count = 2;
+  cfg.pair_min_alternation_score = 0.5;
+  EntranceOscillationDetector det(cfg);
+
+  // A B A B A B — two clusters ~1.0m apart, 0% revisit
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.8, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.1, 0.1, 0, 0.0));
+  det.recordGoal(makeEvent(0.9, 0.1, 1, 0.0));
+  det.recordGoal(makeEvent(0.0, 0.2, 0, 0.0));
+  det.recordGoal(makeEvent(0.8, 0.2, 1, 0.0));
+
+  auto status = det.evaluate();
+  EXPECT_TRUE(status.oscillating);
+  EXPECT_TRUE(status.reason.find("alternating_pair") != std::string::npos);
+}
+
+// ── Test 13: Detects balanced pair without revisit ────────────────────
+
+TEST(EntranceOscillation, DetectsBalancedPairWithoutRevisit)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  cfg.detect_alternating_pair = true;
+  cfg.pair_cluster_radius_m = 0.75;
+  cfg.pair_max_spatial_radius_m = 1.5;
+  cfg.pair_min_cluster_count = 2;
+  cfg.pair_min_alternation_score = 0.5;
+  EntranceOscillationDetector det(cfg);
+
+  // A A B B A B — 0% revisit, balanced
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.1, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.8, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.9, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.0, 0.1, 0, 0.0));
+  det.recordGoal(makeEvent(0.8, 0.1, 1, 0.0));
+
+  auto status = det.evaluate();
+  EXPECT_TRUE(status.oscillating);
+  EXPECT_TRUE(status.reason.find("alternating_pair") != std::string::npos);
+}
+
+// ── Test 14: Does not detect wide pair ────────────────────────────────
+
+TEST(EntranceOscillation, DoesNotDetectWidePair)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  cfg.detect_alternating_pair = true;
+  cfg.pair_cluster_radius_m = 0.75;
+  cfg.pair_max_spatial_radius_m = 1.5;
+  cfg.pair_min_cluster_count = 2;
+  cfg.pair_min_alternation_score = 0.5;
+  EntranceOscillationDetector det(cfg);
+
+  // Two clusters 3.0m apart — exceeds pair_max_spatial_radius_m
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(3.0, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.1, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(3.1, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.0, 0.1, 0, 0.0));
+  det.recordGoal(makeEvent(3.0, 0.1, 1, 0.0));
+
+  auto status = det.evaluate();
+  EXPECT_FALSE(status.oscillating);
+}
+
+// ── Test 15: Does not detect single cluster ───────────────────────────
+
+TEST(EntranceOscillation, DoesNotDetectSingleCluster)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  cfg.detect_alternating_pair = true;
+  cfg.pair_cluster_radius_m = 0.75;
+  EntranceOscillationDetector det(cfg);
+
+  // All goals in one cluster
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.1, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.2, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.3, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.4, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.5, 0.0, 0, 0.0));
+
+  auto status = det.evaluate();
+  // Single cluster → alternating_pair not detected
+  // May still be detected by Type A if revisit is high enough
+  auto pair = det.detectAlternatingPair();
+  EXPECT_FALSE(pair.detected);
+  EXPECT_EQ(pair.cluster_count, 1);
+}
+
+// ── Test 16: Does not detect two clusters with progress ───────────────
+
+TEST(EntranceOscillation, DoesNotDetectTwoClustersWithProgress)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  cfg.detect_alternating_pair = true;
+  cfg.pair_cluster_radius_m = 0.75;
+  cfg.pair_max_spatial_radius_m = 2.0;
+  cfg.pair_min_cluster_count = 2;
+  cfg.pair_min_alternation_score = 0.5;
+  EntranceOscillationDetector det(cfg);
+
+  // Two clusters but second half has more unique bins (progress)
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.1, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.8, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));  // bin 0 again
+  det.recordGoal(makeEvent(2.0, 0.0, 5, 0.0));  // new bin 5 in second half
+  det.recordGoal(makeEvent(2.1, 0.0, 6, 0.0));  // new bin 6 in second half
+
+  auto pair = det.detectAlternatingPair();
+  EXPECT_FALSE(pair.detected);
+}
+
+// ── Test 17: Does not detect unbalanced dominance as pair ─────────────
+
+TEST(EntranceOscillation, DoesNotDetectUnbalancedDominanceAsPair)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  cfg.detect_alternating_pair = true;
+  cfg.pair_cluster_radius_m = 0.75;
+  cfg.pair_max_spatial_radius_m = 1.5;
+  cfg.pair_min_cluster_count = 2;
+  cfg.pair_min_alternation_score = 0.5;
+  EntranceOscillationDetector det(cfg);
+
+  // A A A A B B — cluster B only has 2 goals, but alternation score is low
+  // A A A A B B → transitions = 1 (A→B at index 4), score = 1/5 = 0.2
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.1, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.2, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.3, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(0.8, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(0.9, 0.0, 1, 0.0));
+
+  auto pair = det.detectAlternatingPair();
+  // Cluster B has 2 goals (meets min_cluster_count), but alternation=0.2 < 0.5
+  EXPECT_FALSE(pair.detected);
+}
