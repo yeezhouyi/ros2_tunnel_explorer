@@ -145,12 +145,13 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   // Validate selection_strategy.
   if (selection_strategy_ != "nearest" &&
     selection_strategy_ != "information_gain_revisit" &&
-    selection_strategy_ != "tunnel_aware")
+    selection_strategy_ != "tunnel_aware" &&
+    selection_strategy_ != "tunnel_aware_tiebreaker")
   {
     RCLCPP_ERROR(
       get_logger(),
       "Invalid selection_strategy '%s' -- must be 'nearest', "
-      "'information_gain_revisit', or 'tunnel_aware'",
+      "'information_gain_revisit', 'tunnel_aware', or 'tunnel_aware_tiebreaker'",
       selection_strategy_.c_str());
     throw std::runtime_error("Invalid selection_strategy");
   }
@@ -172,6 +173,8 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
       declare_parameter<double>("weight_wall_risk", 0.5);
     scorer_cfg.geometry_sampling_radius_meters =
       declare_parameter<double>("geometry_sampling_radius_meters", 0.25);
+    scorer_cfg.tiebreaker_epsilon =
+      declare_parameter<double>("tiebreaker_epsilon", 0.10);
     scorer_ = FrontierScorer(scorer_cfg);
   }
 
@@ -641,6 +644,77 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             best.normalized_wall_risk,
             best.score,
             scored_frontiers.size());
+        } else if (selection_strategy_ == "tunnel_aware_tiebreaker") {
+          // Stage 4B.1: Stage 3D scoring + wall-risk tiebreaker.
+          AllCandidatesResult all_sel = goal_selector_.selectAll(
+            valid, gm, robot_pose);
+          too_close_for_marker = all_sel.too_close_goals;
+
+          if (all_sel.candidates.empty()) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu frontiers within min_goal_distance=%.2f m "
+              "— waiting for map update",
+              valid.size(), min_goal_distance_meters_);
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              too_close_for_marker);
+            return;
+          }
+
+          const auto steady_now = std::chrono::steady_clock::now();
+          std::vector<FrontierCluster> post_blacklist;
+          for (const auto & c : all_sel.candidates) {
+            if (!blacklist_.contains(c.representative_world, steady_now)) {
+              post_blacklist.push_back(c);
+            }
+          }
+          if (post_blacklist.empty()) {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+              "All %zu distance-candidates blacklisted — waiting",
+              all_sel.candidates.size());
+            publishMarkers(
+              clusters, blacklisted_positions, std::nullopt,
+              too_close_for_marker);
+            return;
+          }
+
+          // Phase 3: Stage 3D scoring, then apply geometry tiebreaker.
+          scored_frontiers = scorer_.scoreAndRank(
+            post_blacklist, gm, robot_pose, visit_history_);
+
+          bool geometry_valid = tunnel_geometry_.valid();
+          if (geometry_valid) {
+            double age =
+              (this->now() - tunnel_geometry_last_update_).seconds();
+            if (age > tunnel_geometry_max_age_seconds_)
+              geometry_valid = false;
+          }
+          if (geometry_valid) {
+            scorer_.applyTunnelRiskTiebreaker(
+              scored_frontiers, tunnel_geometry_);
+          }
+
+          const auto & best = scored_frontiers.front();
+          goal_pt = best.cluster.representative_world;
+          selected_for_marker = goal_pt;
+
+          RCLCPP_INFO(get_logger(),
+            "Goal: (%.2f, %.2f) dist=%.2f "
+            "gain=%zu(raw)/%.2f(tr)/%.3f(norm) "
+            "revisit=%zu(raw)/%zu(cl)/%.3f(norm) "
+            "risk=%.3f(raw) score=%.4f [%zu cand]%s",
+            goal_pt.x, goal_pt.y,
+            best.goal_distance_meters,
+            best.raw_information_gain,
+            best.transformed_information_gain,
+            best.normalized_information_gain,
+            best.raw_revisit_count,
+            best.clamped_revisit_count,
+            best.normalized_revisit_penalty,
+            best.normalized_wall_risk,
+            best.score,
+            scored_frontiers.size(),
+            geometry_valid ? " +tiebreak" : "");
         } else {
           // nearest strategy (Stage 2A baseline, unchanged).
           GoalSelectionResult sel = goal_selector_.select(

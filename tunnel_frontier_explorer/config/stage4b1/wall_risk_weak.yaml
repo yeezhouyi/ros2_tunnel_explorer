@@ -1,0 +1,10 @@
+# Stage 4B.1: wall-risk-only, weak (0.3). No centerline.
+/**:
+  ros__parameters:
+    selection_strategy: tunnel_aware
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    weight_centerline_alignment: 0.0
+    weight_wall_risk: 0.3

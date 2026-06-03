@@ -52,6 +52,9 @@ struct FrontierScorerConfig
   double weight_centerline_alignment = 0.3;
   double weight_wall_risk = 0.5;
   double geometry_sampling_radius_meters = 0.25;
+
+  // Stage 4B.1: tiebreaker epsilon (used by tunnel_aware_tiebreaker)
+  double tiebreaker_epsilon = 0.10;
 };
 
 /// Scoring result for a single candidate goal.
@@ -148,6 +151,18 @@ public:
     const GridMap & map,
     const Point2D & robot,
     const FrontierVisitHistory & history,
+    const TunnelGeometryGrid & tunnel_geometry) const;
+
+  /// Stage 4B.1: apply wall-risk tiebreaker on already-scored candidates.
+  ///
+  /// Candidates are first ranked by Stage 3D base score.  Among those
+  /// whose base score is within tiebreaker_epsilon of the top score,
+  /// ordering is refined by ascending wall_risk.  Candidates outside
+  /// the epsilon window keep their original ranking.
+  ///
+  /// This ensures geometry acts only when Stage 3D is indifferent.
+  void applyTunnelRiskTiebreaker(
+    std::vector<ScoredGoal> & scored,
     const TunnelGeometryGrid & tunnel_geometry) const;
 
 private:

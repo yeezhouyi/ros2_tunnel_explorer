@@ -380,4 +380,55 @@ std::vector<ScoredGoal> FrontierScorer::scoreAndRankTunnelAware(
   return scored;
 }
 
+// ── applyTunnelRiskTiebreaker ────────────────────────────────────────────
+
+void FrontierScorer::applyTunnelRiskTiebreaker(
+  std::vector<ScoredGoal> & scored,
+  const TunnelGeometryGrid & tunnel_geometry) const
+{
+  if (scored.size() < 2) return;
+  if (!tunnel_geometry.valid()) return;
+
+  // Compute wall_risk for each candidate at the projected scoring point.
+  const double proj_dist = 0.4;
+  for (auto & sg : scored) {
+    // Use the scoring point already computed, or fall back to representative.
+    Point2D sp = sg.scoring_point_world;
+    if (sp.x == 0.0 && sp.y == 0.0) {
+      sp = sg.cluster.representative_world;
+    }
+    auto risk_opt = tunnel_geometry.sampleWallRisk(sp);
+    double risk = risk_opt.value_or(
+      tunnel_geometry.avgRiskInRadius(sp, config_.geometry_sampling_radius_meters));
+    sg.normalized_wall_risk = risk;
+  }
+
+  // Find top base score (Stage 3D score before geometry terms).
+  double top_score = scored[0].score;
+
+  // Partition: candidates within epsilon of top_score get re-ranked by risk.
+  // Those outside keep their original order after the risk-prioritized group.
+  std::vector<ScoredGoal> tie_group;
+  std::vector<ScoredGoal> rest;
+  for (auto & sg : scored) {
+    if (top_score - sg.score <= config_.tiebreaker_epsilon) {
+      tie_group.push_back(std::move(sg));
+    } else {
+      rest.push_back(std::move(sg));
+    }
+  }
+
+  // Sort tie group by ascending wall_risk (lower risk = better).
+  std::stable_sort(tie_group.begin(), tie_group.end(),
+    [](const ScoredGoal & a, const ScoredGoal & b) {
+      return a.normalized_wall_risk < b.normalized_wall_risk;
+    });
+
+  // Reassemble: tie group first, then rest in original order.
+  scored.clear();
+  scored.reserve(tie_group.size() + rest.size());
+  for (auto & sg : tie_group) scored.push_back(std::move(sg));
+  for (auto & sg : rest) scored.push_back(std::move(sg));
+}
+
 }  // namespace tunnel_frontier_explorer

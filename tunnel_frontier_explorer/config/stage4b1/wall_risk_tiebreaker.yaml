@@ -1,0 +1,17 @@
+# Stage 4B.1: geometry tiebreaker.
+# Ranks candidates by Stage 3D base score first.
+# Among candidates within tiebreaker_epsilon of the top score,
+# promotes those with lower wall_risk.
+# Does NOT penalize centerline deviation.
+#
+# This ensures geometry only acts when Stage 3D is indifferent.
+/**:
+  ros__parameters:
+    selection_strategy: tunnel_aware_tiebreaker
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    weight_centerline_alignment: 0.0
+    weight_wall_risk: 1.0
+    tiebreaker_epsilon: 0.10
