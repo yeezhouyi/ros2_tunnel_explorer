@@ -1,0 +1,204 @@
+// Copyright 2026 zhouyi
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <gtest/gtest.h>
+
+#include "tunnel_frontier_explorer/entrance_oscillation_detector.hpp"
+
+using tunnel_frontier_explorer::EntranceOscillationConfig;
+using tunnel_frontier_explorer::EntranceOscillationDetector;
+using tunnel_frontier_explorer::GoalDispatchEvent;
+
+static GoalDispatchEvent makeEvent(double x, double y, int bin, double revisit = 0.0)
+{
+  GoalDispatchEvent e;
+  e.goal = {x, y};
+  e.robot = {0.0, 0.0};
+  e.stamp_seconds = 0.0;
+  e.selected_bin = bin;
+  e.revisit_ratio = revisit;
+  e.unique_bins = 0;
+  return e;
+}
+
+// ── Test 1: No oscillation with progress (wide exploration) ─────────────
+
+TEST(EntranceOscillation, NoOscillationWithProgress)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  EntranceOscillationDetector det(cfg);
+
+  // Goals spread across 3 different bins, large radius
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(3.0, 3.0, 1, 0.0));
+  det.recordGoal(makeEvent(6.0, 0.0, 2, 0.0));
+  det.recordGoal(makeEvent(0.0, 6.0, 3, 0.0));
+
+  auto status = det.evaluate();
+  EXPECT_FALSE(status.oscillating);
+}
+
+// ── Test 2: Detects localized repeated goals ────────────────────────────
+
+TEST(EntranceOscillation, DetectsLocalizedRepeatedGoals)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.radius_m = 2.0;
+  cfg.min_goals_to_check = 4;
+  cfg.max_unique_bins = 2;
+  cfg.min_revisit_ratio = 0.35;
+  EntranceOscillationDetector det(cfg);
+
+  // All goals within 1.0m radius, same bin, high revisit
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.5));
+  det.recordGoal(makeEvent(0.3, 0.2, 0, 0.6));
+  det.recordGoal(makeEvent(0.1, 0.4, 0, 0.7));
+  det.recordGoal(makeEvent(0.2, 0.1, 0, 0.4));
+
+  auto status = det.evaluate();
+  EXPECT_TRUE(status.oscillating);
+  EXPECT_LE(status.spatial_radius_m, cfg.radius_m);
+  EXPECT_TRUE(status.reason.find("localized_goals") != std::string::npos);
+  EXPECT_TRUE(status.reason.find("stagnant_bins") != std::string::npos);
+  EXPECT_TRUE(status.reason.find("high_revisit") != std::string::npos);
+}
+
+// ── Test 3: Does not trigger on wide exploration ────────────────────────
+
+TEST(EntranceOscillation, DoesNotTriggerOnWideExploration)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.radius_m = 2.0;
+  cfg.min_goals_to_check = 4;
+  EntranceOscillationDetector det(cfg);
+
+  // Goals far apart, different bins
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(5.0, 5.0, 5, 0.0));
+  det.recordGoal(makeEvent(10.0, 0.0, 10, 0.0));
+  det.recordGoal(makeEvent(0.0, 10.0, 15, 0.0));
+
+  auto status = det.evaluate();
+  EXPECT_FALSE(status.oscillating);
+  EXPECT_GT(status.spatial_radius_m, cfg.radius_m);
+}
+
+// ── Test 4: Requires minimum window ─────────────────────────────────────
+
+TEST(EntranceOscillation, RequiresMinimumWindow)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  EntranceOscillationDetector det(cfg);
+
+  // Only 3 goals — below min_goals_to_check
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.8));
+  det.recordGoal(makeEvent(0.1, 0.1, 0, 0.9));
+  det.recordGoal(makeEvent(0.2, 0.2, 0, 0.7));
+
+  auto status = det.evaluate();
+  EXPECT_FALSE(status.oscillating);
+  EXPECT_EQ(det.windowSize(), 3u);
+}
+
+// ── Test 5: Resets after progress ───────────────────────────────────────
+
+TEST(EntranceOscillation, ResetsAfterProgress)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  EntranceOscillationDetector det(cfg);
+
+  // Detect oscillation first
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.5));
+  det.recordGoal(makeEvent(0.1, 0.1, 0, 0.6));
+  det.recordGoal(makeEvent(0.2, 0.2, 0, 0.7));
+  det.recordGoal(makeEvent(0.3, 0.3, 0, 0.4));
+  auto status = det.evaluate();
+  EXPECT_TRUE(status.oscillating);
+  EXPECT_EQ(det.eventCount(), 1u);
+
+  // Reset and verify clean state
+  det.reset();
+  EXPECT_EQ(det.windowSize(), 0u);
+  EXPECT_EQ(det.eventCount(), 0u);
+
+  // New wide exploration should not oscillate
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(5.0, 5.0, 5, 0.0));
+  det.recordGoal(makeEvent(10.0, 0.0, 10, 0.0));
+  det.recordGoal(makeEvent(0.0, 10.0, 15, 0.0));
+  status = det.evaluate();
+  EXPECT_FALSE(status.oscillating);
+}
+
+// ── Test 6: Window trims to max size ────────────────────────────────────
+
+TEST(EntranceOscillation, WindowTrimsToMaxSize)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 4;
+  cfg.min_goals_to_check = 4;
+  EntranceOscillationDetector det(cfg);
+
+  for (int i = 0; i < 8; ++i) {
+    det.recordGoal(makeEvent(i * 1.0, 0.0, i, 0.0));
+  }
+
+  EXPECT_EQ(det.windowSize(), 4u);
+}
+
+// ── Test 7: getCurrentUniqueBins ────────────────────────────────────────
+
+TEST(EntranceOscillation, GetCurrentUniqueBins)
+{
+  EntranceOscillationConfig cfg;
+  EntranceOscillationDetector det(cfg);
+
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.0));
+  det.recordGoal(makeEvent(1.0, 0.0, 1, 0.0));
+  det.recordGoal(makeEvent(2.0, 0.0, 0, 0.0));
+
+  EXPECT_EQ(det.getCurrentUniqueBins(), 2);  // bins {0, 1}
+}
+
+// ── Test 8: Oscillation count increments across evaluations ─────────────
+
+TEST(EntranceOscillation, EventCountIncrements)
+{
+  EntranceOscillationConfig cfg;
+  cfg.window_goals = 6;
+  cfg.min_goals_to_check = 4;
+  EntranceOscillationDetector det(cfg);
+
+  // First oscillation event
+  det.recordGoal(makeEvent(0.0, 0.0, 0, 0.5));
+  det.recordGoal(makeEvent(0.1, 0.1, 0, 0.6));
+  det.recordGoal(makeEvent(0.2, 0.2, 0, 0.7));
+  det.recordGoal(makeEvent(0.3, 0.3, 0, 0.4));
+  auto s1 = det.evaluate();
+  EXPECT_TRUE(s1.oscillating);
+  EXPECT_EQ(det.eventCount(), 1u);
+
+  // Second evaluation — same window, still oscillating
+  auto s2 = det.evaluate();
+  EXPECT_TRUE(s2.oscillating);
+  EXPECT_EQ(det.eventCount(), 2u);
+}

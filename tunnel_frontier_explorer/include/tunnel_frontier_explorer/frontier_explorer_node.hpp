@@ -37,6 +37,7 @@
 #include "tunnel_frontier_explorer/frontier_scorer.hpp"
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
 #include "tunnel_frontier_explorer/tunnel_geometry_grid.hpp"
+#include "tunnel_frontier_explorer/entrance_oscillation_detector.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -147,6 +148,16 @@ private:
   bool geometry_missing_fallback_to_stage3d_;
   TunnelGeometryGrid tunnel_geometry_;
   rclcpp::Time tunnel_geometry_last_update_{0, 0, RCL_ROS_TIME};
+
+  // Stage 4B.2: entrance oscillation detection
+  EntranceOscillationDetector entrance_oscillation_detector_;
+  bool entrance_oscillation_enabled_;
+  int entrance_oscillation_window_goals_;
+  double entrance_oscillation_radius_m_;
+  int entrance_oscillation_min_repeated_goals_;
+  int entrance_oscillation_max_unique_bins_;
+  double entrance_oscillation_min_revisit_ratio_;
+  int entrance_oscillation_min_goals_to_check_;
 
   // ── Goal safety projection ──────────────────────────────────────
   std::optional<Point2D> projectGoalTowardRobot(

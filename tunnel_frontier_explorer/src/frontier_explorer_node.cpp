@@ -126,6 +126,33 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   geometry_missing_fallback_to_stage3d_ = declare_parameter<bool>(
     "geometry_missing_fallback_to_stage3d", true);
 
+  // -- Stage 4B.2: entrance oscillillation detection ──────────────────────
+  entrance_oscillation_enabled_ = declare_parameter<bool>(
+    "entrance_oscillation_enabled", true);
+  entrance_oscillation_window_goals_ = declare_parameter<int>(
+    "entrance_oscillation_window_goals", 6);
+  entrance_oscillation_radius_m_ = declare_parameter<double>(
+    "entrance_oscillation_radius_m", 2.0);
+  entrance_oscillation_min_repeated_goals_ = declare_parameter<int>(
+    "entrance_oscillation_min_repeated_goals", 4);
+  entrance_oscillation_max_unique_bins_ = declare_parameter<int>(
+    "entrance_oscillation_max_unique_bins", 2);
+  entrance_oscillation_min_revisit_ratio_ = declare_parameter<double>(
+    "entrance_oscillation_min_revisit_ratio", 0.35);
+  entrance_oscillation_min_goals_to_check_ = declare_parameter<int>(
+    "entrance_oscillation_min_goals_to_check", 4);
+
+  {
+    EntranceOscillationConfig osc_cfg;
+    osc_cfg.window_goals = entrance_oscillation_window_goals_;
+    osc_cfg.radius_m = entrance_oscillation_radius_m_;
+    osc_cfg.min_repeated_goals = entrance_oscillation_min_repeated_goals_;
+    osc_cfg.max_unique_bins = entrance_oscillation_max_unique_bins_;
+    osc_cfg.min_revisit_ratio = entrance_oscillation_min_revisit_ratio_;
+    osc_cfg.min_goals_to_check = entrance_oscillation_min_goals_to_check_;
+    entrance_oscillation_detector_ = EntranceOscillationDetector(osc_cfg);
+  }
+
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
     "selection_strategy", "nearest");
@@ -432,6 +459,42 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
 
             current_goal_ = *probe;
             navigating_start_time_ = this->now();
+
+            if (entrance_oscillation_enabled_) {
+              const int selected_bin = static_cast<int>(
+                std::floor(probe->x / loop_bin_size_));
+              const int unique_bins =
+                entrance_oscillation_detector_.getCurrentUniqueBins();
+              const std::size_t raw_revisit =
+                visit_history_.countVisitsNear(
+                  *probe, revisit_radius_meters_);
+              const double revisit_ratio =
+                static_cast<double>(raw_revisit) /
+                static_cast<double>(max_revisit_count_);
+
+              GoalDispatchEvent osc_event;
+              osc_event.goal = *probe;
+              osc_event.robot = robot_pose;
+              osc_event.stamp_seconds = this->now().seconds();
+              osc_event.selected_bin = selected_bin;
+              osc_event.revisit_ratio = revisit_ratio;
+              osc_event.unique_bins = unique_bins;
+              entrance_oscillation_detector_.recordGoal(osc_event);
+
+              auto osc_status = entrance_oscillation_detector_.evaluate();
+              if (osc_status.oscillating) {
+                RCLCPP_WARN(get_logger(),
+                  "[EntranceOscillation] detected=true count=%d "
+                  "window=%zu radius=%.2fm unique_bins=%d "
+                  "revisit=%.2f reason=%s (recovery probe)",
+                  osc_status.event_count,
+                  entrance_oscillation_detector_.windowSize(),
+                  osc_status.spatial_radius_m,
+                  unique_bins,
+                  revisit_ratio,
+                  osc_status.reason.c_str());
+              }
+            }
 
             auto send_opts = rclcpp_action::Client<
               nav2_msgs::action::NavigateToPose>::SendGoalOptions();
@@ -793,6 +856,42 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         navigating_start_time_ = this->now();
 
       // Send goal.
+        if (entrance_oscillation_enabled_) {
+          const int selected_bin = static_cast<int>(
+            std::floor(goal_pt.x / loop_bin_size_));
+          const int unique_bins =
+            entrance_oscillation_detector_.getCurrentUniqueBins();
+          const std::size_t raw_revisit =
+            visit_history_.countVisitsNear(
+              goal_pt, revisit_radius_meters_);
+          const double revisit_ratio =
+            static_cast<double>(raw_revisit) /
+            static_cast<double>(max_revisit_count_);
+
+          GoalDispatchEvent osc_event;
+          osc_event.goal = goal_pt;
+          osc_event.robot = robot_pose;
+          osc_event.stamp_seconds = this->now().seconds();
+          osc_event.selected_bin = selected_bin;
+          osc_event.revisit_ratio = revisit_ratio;
+          osc_event.unique_bins = unique_bins;
+          entrance_oscillation_detector_.recordGoal(osc_event);
+
+          auto osc_status = entrance_oscillation_detector_.evaluate();
+          if (osc_status.oscillating) {
+            RCLCPP_WARN(get_logger(),
+              "[EntranceOscillation] detected=true count=%d "
+              "window=%zu radius=%.2fm unique_bins=%d "
+              "revisit=%.2f reason=%s",
+              osc_status.event_count,
+              entrance_oscillation_detector_.windowSize(),
+              osc_status.spatial_radius_m,
+              unique_bins,
+              revisit_ratio,
+              osc_status.reason.c_str());
+          }
+        }
+
         auto send_opts = rclcpp_action::Client<
           nav2_msgs::action::NavigateToPose>::SendGoalOptions();
         send_opts.goal_response_callback =

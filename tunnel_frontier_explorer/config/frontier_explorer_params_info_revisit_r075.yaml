@@ -45,6 +45,15 @@
     recovery_probe_cooldown_seconds: 30.0
     recovery_max_attempts: 3
 
+    # ── Stage 4B.2: entrance oscillillation detection ──────────────────
+    entrance_oscillation_enabled: true
+    entrance_oscillation_window_goals: 6
+    entrance_oscillation_radius_m: 2.0
+    entrance_oscillation_min_repeated_goals: 4
+    entrance_oscillation_max_unique_bins: 2
+    entrance_oscillation_min_revisit_ratio: 0.35
+    entrance_oscillation_min_goals_to_check: 4
+
     # ── Stage 2C: revisit_radius 0.50 → 0.75 ──────────────────────────────
     selection_strategy: information_gain_revisit
 

@@ -23,6 +23,7 @@ add_library(frontier_detection STATIC
   src/frontier_goal_selector.cpp
   src/frontier_scorer.cpp
   src/frontier_visit_history.cpp
+  src/entrance_oscillation_detector.cpp
 )
 
 target_include_directories(frontier_detection
@@ -151,6 +152,15 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_tiebreaker frontier_detection)
   target_include_directories(test_tiebreaker PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  # ── Stage 4B.2: entrance oscillation detector tests ─────────────────
+  ament_add_gtest(test_entrance_oscillation_detector
+    test/test_entrance_oscillation_detector.cpp
+  )
+  target_link_libraries(test_entrance_oscillation_detector frontier_detection)
+  target_include_directories(test_entrance_oscillation_detector PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 endif()
