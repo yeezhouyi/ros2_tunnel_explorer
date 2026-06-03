@@ -20,7 +20,7 @@
 | **3C** | **Topology Generalization (Formal)** | **FAIL** — completion 40% (2/5), mean revisit 49.3%, entrance-frontier oscillation despite 100% Nav2 success |
 | **3D** | **Entrance-Loop Recovery** | **PASS** — 5/5 explorer-level completion, mean revisit 34.6%, recovery probe 4/4 success, Nav2 100% |
 | **4A** | **Tunnel Centerline Extraction** | **PASS** — distance field, Zhang-Suen skeleton, branch/endpoint detection, 8/8 tests |
-| **4B** | **Tunnel-Aware Frontier Scoring** | **PASS** — centerline + wall-risk features in scorer, `tunnel_aware` strategy, fallback to 3D, 7/7 tests |
+| **4B** | **Tunnel-Aware Frontier Scoring** | **EVALUATED** — geometry reduces revisit (−6.9pp) and TTC (−18%) but completion regresses (80%→60%); experimental, not default |
 
 ### Stage 1C Baseline Metrics
 

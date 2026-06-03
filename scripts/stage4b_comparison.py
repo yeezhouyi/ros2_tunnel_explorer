@@ -85,7 +85,7 @@ def summarize(label, runs):
 def main():
     base = os.path.expanduser("~/stage4b_benchmark")
     variants = {
-        "Stage 3D baseline": load_runs(f"{base}/stage3d"),
+        "Stage 3D baseline": load_runs(f"{base}/stage3d_baseline"),
         "4B risk-only": load_runs(f"{base}/risk_only"),
         "4B centerline-only": load_runs(f"{base}/centerline_only"),
         "4B full (risk+centerline)": load_runs(f"{base}/full"),

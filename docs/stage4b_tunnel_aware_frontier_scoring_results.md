@@ -64,14 +64,24 @@ reachable safe goal rather than the frontier boundary cell.
 
 ## Results
 
-*To be filled after benchmark runs.*
+All 15 geometry-enabled runs validated: 0 fallbacks, non-zero geometry features
+confirmed in every run. Geometry topics delivered within 200s gate on all runs.
 
-| Variant | Runs | Completion | Mean TTC | Mean Revisit | Recovery Probes | Nav2 Success |
-|---------|------|------------|----------|--------------|-----------------|--------------|
-| Stage 3D baseline | — | — | — | — | — | — |
-| 4B risk-only | — | — | — | — | — | — |
-| 4B centerline-only | — | — | — | — | — | — |
-| 4B full | — | — | — | — | — | — |
+| Variant | Runs | Completion | Mean TTC | Mean Revisit | Mean Bins | Recovery Probes | Nav2 Success |
+|---------|------|:---------:|----------|:------------:|:---------:|:---------------:|:------------:|
+| Stage 3D baseline | 5 | **80%** | 736s | 37.7% | 6.0 | 4/4 | 105.9% |
+| 4B risk-only | 5 | 60% | 728s | 35.9% | 6.2 | 4/4 | 106.8% |
+| 4B centerline-only | 5 | 20% | 251s | **29.8%** | **7.0** | 4/4 | 103.8% |
+| 4B full | 5 | 60% | **602s** | **30.8%** | **6.6** | 4/4 | 107.3% |
+
+### Key Deltas (3D baseline → 4B full)
+
+| Metric | Stage 3D | 4B full | Delta |
+|--------|:--------:|:-------:|:-----:|
+| Completion | 80% | 60% | −20pp ❌ |
+| Mean revisit | 37.7% | 30.8% | −6.9pp ✅ |
+| Mean TTC | 736s | 602s | −18% ✅ |
+| Mean unique bins | 6.0 | 6.6 | +10% ✅ |
 
 ## Running the Ablation
 
@@ -103,13 +113,22 @@ python3 scripts/stage4b_comparison.py
 
 ## Conclusion
 
-Stage 4B validates that tunnel geometry features can be integrated into frontier
-selection via a conservative scoring extension. The `tunnel_aware` strategy
-maintains fallback compatibility with Stage 3D when centerline data is unavailable
-and introduces centerline-alignment and wall-risk features for future
-topology-aware planning (Stage 5).
+Stage 4B validates the tunnel-aware scoring integration path. Geometry maps
+were successfully delivered to the frontier scorer with zero fallback across
+all 15 geometry-enabled runs. Tunnel geometry reduced mean revisit by 6.9 pp
+and improved mean TTC by 18% in the full configuration.
+
+However, completion regressed from 80% to 60%, and centerline-only scoring
+was especially harmful (20% completion). Therefore, `tunnel_aware` is retained
+as an **experimental strategy**, while Stage 3D `information_gain_revisit`
+remains the default stable policy.
+
+**Finding**: tunnel geometry can reduce revisit and TTC, but current weights
+sacrifice completion. Geometry should be used as a conservative penalty on
+high-risk candidates, not as a primary scoring term.
 
 ## Next
 
+- **Stage 4B.1**: Safe geometry bias — lower weights, geometry-as-tiebreaker, or wall-risk-only penalty to recover completion while retaining revisit gains
 - **Stage 4C**: Multi-topology benchmark suite (straight, L, Y, T, cross, dead-end)
 - **Stage 5**: Nav2 Tunnel-Aware Planner plugin
