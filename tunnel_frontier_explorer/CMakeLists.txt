@@ -144,6 +144,15 @@ if(BUILD_TESTING)
   target_include_directories(test_frontier_scorer_tunnel_aware PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
+
+  # ── Stage 4B.1: tiebreaker tests ────────────────────────────────────
+  ament_add_gtest(test_tiebreaker
+    test/test_tiebreaker.cpp
+  )
+  target_link_libraries(test_tiebreaker frontier_detection)
+  target_include_directories(test_tiebreaker PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
 endif()
 
 ament_package()
