@@ -38,6 +38,7 @@
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
 #include "tunnel_frontier_explorer/tunnel_geometry_grid.hpp"
 #include "tunnel_frontier_explorer/entrance_oscillation_detector.hpp"
+#include "tunnel_frontier_explorer/escape_probe_generator.hpp"
 
 namespace tunnel_frontier_explorer
 {
@@ -174,6 +175,20 @@ private:
   double entrance_oscillation_suppression_radius_m_;
   double entrance_oscillation_escape_penalty_;
   void applyEscapeModePenalty(std::vector<ScoredGoal> & scored);
+  bool allCandidatesInsideRadius(const std::vector<ScoredGoal> & scored) const;
+
+  // Stage 4C.1: forced escape probe
+  bool entrance_oscillation_force_escape_probe_;
+  double entrance_oscillation_probe_distance_m_;
+  double entrance_oscillation_probe_distance_step_m_;
+  double entrance_oscillation_probe_exit_margin_m_;
+  int entrance_oscillation_probe_max_attempts_;
+  double entrance_oscillation_probe_angle_span_deg_;
+  double entrance_oscillation_probe_min_wall_distance_m_;
+  int entrance_oscillation_probe_cooldown_goals_;
+  int forced_probe_cooldown_remaining_ = 0;
+  EscapeProbeGenerator probe_generator_;
+  Point2D last_selected_goal_;
 
   // ── Goal safety projection ──────────────────────────────────────
   std::optional<Point2D> projectGoalTowardRobot(

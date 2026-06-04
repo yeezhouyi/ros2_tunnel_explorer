@@ -178,6 +178,35 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   entrance_oscillation_escape_penalty_ = declare_parameter<double>(
     "entrance_oscillation_escape_penalty", 0.75);
 
+  // -- Stage 4C.1: forced escape probe ─────────────────────────────────
+  entrance_oscillation_force_escape_probe_ = declare_parameter<bool>(
+    "entrance_oscillation_force_escape_probe", true);
+  entrance_oscillation_probe_distance_m_ = declare_parameter<double>(
+    "entrance_oscillation_probe_distance_m", 1.25);
+  entrance_oscillation_probe_distance_step_m_ = declare_parameter<double>(
+    "entrance_oscillation_probe_distance_step_m", 0.5);
+  entrance_oscillation_probe_exit_margin_m_ = declare_parameter<double>(
+    "entrance_oscillation_probe_exit_margin_m", 0.25);
+  entrance_oscillation_probe_max_attempts_ = declare_parameter<int>(
+    "entrance_oscillation_probe_max_attempts", 8);
+  entrance_oscillation_probe_angle_span_deg_ = declare_parameter<double>(
+    "entrance_oscillation_probe_angle_span_deg", 90.0);
+  entrance_oscillation_probe_min_wall_distance_m_ = declare_parameter<double>(
+    "entrance_oscillation_probe_min_wall_distance_m", 0.35);
+  entrance_oscillation_probe_cooldown_goals_ = declare_parameter<int>(
+    "entrance_oscillation_probe_cooldown_goals", 3);
+
+  {
+    EscapeProbeConfig ep_cfg;
+    ep_cfg.probe_distance_m = entrance_oscillation_probe_distance_m_;
+    ep_cfg.probe_distance_step_m = entrance_oscillation_probe_distance_step_m_;
+    ep_cfg.probe_exit_margin_m = entrance_oscillation_probe_exit_margin_m_;
+    ep_cfg.max_attempts = entrance_oscillation_probe_max_attempts_;
+    ep_cfg.angle_span_deg = entrance_oscillation_probe_angle_span_deg_;
+    ep_cfg.min_wall_distance_m = entrance_oscillation_probe_min_wall_distance_m_;
+    probe_generator_ = EscapeProbeGenerator(ep_cfg);
+  }
+
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
     "selection_strategy", "nearest");
@@ -383,6 +412,23 @@ void TunnelFrontierExplorerNode::applyEscapeModePenalty(
     escape_mode_remaining_goals_, oscillation_center_.x, oscillation_center_.y,
     entrance_oscillation_suppression_radius_m_, penalized,
     static_cast<int>(scored.size()));
+}
+
+// ── allCandidatesInsideRadius ───────────────────────────────────────────────
+
+bool TunnelFrontierExplorerNode::allCandidatesInsideRadius(
+  const std::vector<ScoredGoal> & scored) const
+{
+  if (scored.empty() || !escape_mode_active_) {return false;}
+  for (const auto & sg : scored) {
+    const double d = std::hypot(
+      sg.cluster.representative_world.x - oscillation_center_.x,
+      sg.cluster.representative_world.y - oscillation_center_.y);
+    if (d >= entrance_oscillation_suppression_radius_m_) {
+      return false;  // at least one candidate outside
+    }
+  }
+  return true;  // all inside
 }
 
 // ── explorationTimerCallback ─────────────────────────────────────────────
@@ -715,6 +761,34 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           goal_pt = best.cluster.representative_world;
           selected_for_marker = goal_pt;
 
+          // Stage 4C.1: forced escape probe when all candidates inside radius
+          if (escape_mode_active_ && allCandidatesInsideRadius(scored_frontiers) &&
+              forced_probe_cooldown_remaining_ == 0 &&
+              entrance_oscillation_force_escape_probe_)
+          {
+            auto probe = probe_generator_.generateEscapeProbe(
+              robot_pose, oscillation_center_, last_selected_goal_,
+              gm, entrance_oscillation_suppression_radius_m_);
+            if (probe) {
+              goal_pt = *probe;
+              selected_for_marker = goal_pt;
+              forced_probe_cooldown_remaining_ =
+                entrance_oscillation_probe_cooldown_goals_;
+              RCLCPP_INFO(get_logger(),
+                "[ForcedEscapeProbe] triggered=true valid=true "
+                "center=(%.2f,%.2f) selected=(%.2f,%.2f) cooldown=%d",
+                oscillation_center_.x, oscillation_center_.y,
+                goal_pt.x, goal_pt.y,
+                forced_probe_cooldown_remaining_);
+            } else {
+              RCLCPP_INFO(get_logger(),
+                "[ForcedEscapeProbe] triggered=true valid=false "
+                "reason=no_safe_probe fallback=original_goal");
+            }
+          }
+
+          last_selected_goal_ = goal_pt;
+
           RCLCPP_INFO(get_logger(),
             "Goal: (%.2f, %.2f) dist=%.2f "
             "gain=%zu(raw)/%.2f(tr)/%.3f(norm) "
@@ -794,6 +868,34 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           goal_pt = best.cluster.representative_world;
           selected_for_marker = goal_pt;
 
+          // Stage 4C.1: forced escape probe when all candidates inside radius
+          if (escape_mode_active_ && allCandidatesInsideRadius(scored_frontiers) &&
+              forced_probe_cooldown_remaining_ == 0 &&
+              entrance_oscillation_force_escape_probe_)
+          {
+            auto probe = probe_generator_.generateEscapeProbe(
+              robot_pose, oscillation_center_, last_selected_goal_,
+              gm, entrance_oscillation_suppression_radius_m_);
+            if (probe) {
+              goal_pt = *probe;
+              selected_for_marker = goal_pt;
+              forced_probe_cooldown_remaining_ =
+                entrance_oscillation_probe_cooldown_goals_;
+              RCLCPP_INFO(get_logger(),
+                "[ForcedEscapeProbe] triggered=true valid=true "
+                "center=(%.2f,%.2f) selected=(%.2f,%.2f) cooldown=%d",
+                oscillation_center_.x, oscillation_center_.y,
+                goal_pt.x, goal_pt.y,
+                forced_probe_cooldown_remaining_);
+            } else {
+              RCLCPP_INFO(get_logger(),
+                "[ForcedEscapeProbe] triggered=true valid=false "
+                "reason=no_safe_probe fallback=original_goal");
+            }
+          }
+
+          last_selected_goal_ = goal_pt;
+
           RCLCPP_INFO(get_logger(),
             "Goal: (%.2f, %.2f) dist=%.2f "
             "gain=%zu(raw)/%.2f(tr)/%.3f(norm) "
@@ -866,6 +968,34 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           const auto & best = scored_frontiers.front();
           goal_pt = best.cluster.representative_world;
           selected_for_marker = goal_pt;
+
+          // Stage 4C.1: forced escape probe when all candidates inside radius
+          if (escape_mode_active_ && allCandidatesInsideRadius(scored_frontiers) &&
+              forced_probe_cooldown_remaining_ == 0 &&
+              entrance_oscillation_force_escape_probe_)
+          {
+            auto probe = probe_generator_.generateEscapeProbe(
+              robot_pose, oscillation_center_, last_selected_goal_,
+              gm, entrance_oscillation_suppression_radius_m_);
+            if (probe) {
+              goal_pt = *probe;
+              selected_for_marker = goal_pt;
+              forced_probe_cooldown_remaining_ =
+                entrance_oscillation_probe_cooldown_goals_;
+              RCLCPP_INFO(get_logger(),
+                "[ForcedEscapeProbe] triggered=true valid=true "
+                "center=(%.2f,%.2f) selected=(%.2f,%.2f) cooldown=%d",
+                oscillation_center_.x, oscillation_center_.y,
+                goal_pt.x, goal_pt.y,
+                forced_probe_cooldown_remaining_);
+            } else {
+              RCLCPP_INFO(get_logger(),
+                "[ForcedEscapeProbe] triggered=true valid=false "
+                "reason=no_safe_probe fallback=original_goal");
+            }
+          }
+
+          last_selected_goal_ = goal_pt;
 
           RCLCPP_INFO(get_logger(),
             "Goal: (%.2f, %.2f) dist=%.2f "
@@ -1021,6 +1151,11 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
             RCLCPP_INFO(get_logger(),
               "[OscillationEscape] mode deactivated after goal dispatch");
           }
+        }
+
+        // Stage 4C.1: decrement forced probe cooldown
+        if (forced_probe_cooldown_remaining_ > 0) {
+          forced_probe_cooldown_remaining_--;
         }
 
         publishMarkers(
