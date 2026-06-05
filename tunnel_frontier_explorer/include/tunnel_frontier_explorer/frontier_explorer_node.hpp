@@ -190,6 +190,25 @@ private:
   EscapeProbeGenerator probe_generator_;
   Point2D last_selected_goal_;
 
+  // Stage 4D.1: conservative fallback gating
+  bool entrance_oscillation_stuck_detector_enabled_;
+  double entrance_oscillation_no_progress_threshold_m_;
+  int entrance_oscillation_no_progress_min_steps_;
+  int entrance_oscillation_repeated_revisit_min_;
+  int entrance_oscillation_cooldown_goals_;
+  int escape_cooldown_remaining_ = 0;
+  int entrance_oscillation_escape_max_goals_;
+  double entrance_oscillation_escape_deactivation_distance_m_;
+  int entrance_oscillation_escape_no_oscillation_deactivate_goals_;
+  int escape_goals_dispatched_ = 0;
+  int no_progress_count_ = 0;
+  double last_goal_distance_ = 0.0;
+  int no_oscillation_count_ = 0;
+  bool evaluateStuckCondition(
+    const OscillationStatus & osc_status,
+    int num_valid_clusters,
+    double current_goal_distance);
+
   // ── Goal safety projection ──────────────────────────────────────
   std::optional<Point2D> projectGoalTowardRobot(
     const Point2D & goal, const Point2D & robot,

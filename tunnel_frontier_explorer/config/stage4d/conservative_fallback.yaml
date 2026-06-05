@@ -1,0 +1,48 @@
+# Stage 4D.1: Conservative Fallback Gating
+# Baseline-first, escape-only-when-trapped.
+/**:
+  ros__parameters:
+    # ── Baseline: Stage 3D + information_gain_revisit ─────────────────
+    selection_strategy: information_gain_revisit
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    # ── Stage 4B.2: oscillillation detection ─────────────────────────
+    entrance_oscillation_enabled: true
+    entrance_oscillation_window_goals: 6
+    entrance_oscillation_radius_m: 2.0
+    entrance_oscillation_min_repeated_goals: 4
+    entrance_oscillation_max_unique_bins: 2
+    entrance_oscillation_min_revisit_ratio: 0.35
+    entrance_oscillation_min_goals_to_check: 4
+    entrance_oscillation_detect_alternating_pair: true
+    entrance_oscillation_pair_cluster_radius_m: 0.75
+    entrance_oscillation_pair_max_spatial_radius_m: 1.5
+    entrance_oscillation_pair_min_cluster_count: 2
+    entrance_oscillation_pair_min_alternation_score: 0.5
+
+    # ── Stage 4D.1: conservative fallback gating ─────────────────────
+    entrance_oscillation_response_enabled: true
+    entrance_oscillation_stuck_detector_enabled: true
+    entrance_oscillation_no_progress_threshold_m: 0.1
+    entrance_oscillation_no_progress_min_steps: 3
+    entrance_oscillation_repeated_revisit_min: 2
+    entrance_oscillation_cooldown_goals: 5
+
+    # ── Escape behavior (condition-based) ─────────────────────────────
+    entrance_oscillation_escape_max_goals: 5
+    entrance_oscillation_escape_deactivation_distance_m: 1.0
+    entrance_oscillation_escape_no_oscillation_deactivate_goals: 2
+    entrance_oscillation_suppression_radius_m: 1.5
+    entrance_oscillation_escape_penalty: 0.75
+
+    # ── Forced probe from 4C.1 ────────────────────────────────────────
+    entrance_oscillation_force_escape_probe: true
+    entrance_oscillation_probe_distance_m: 1.25
+    entrance_oscillation_probe_distance_step_m: 0.5
+    entrance_oscillation_probe_exit_margin_m: 0.25
+    entrance_oscillation_probe_max_attempts: 8
+    entrance_oscillation_probe_angle_span_deg: 90.0
+    entrance_oscillation_probe_min_wall_distance_m: 0.35
+    entrance_oscillation_probe_cooldown_goals: 3

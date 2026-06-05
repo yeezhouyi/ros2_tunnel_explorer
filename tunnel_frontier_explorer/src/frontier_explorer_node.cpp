@@ -207,6 +207,24 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     probe_generator_ = EscapeProbeGenerator(ep_cfg);
   }
 
+  // -- Stage 4D.1: conservative fallback gating ─────────────────────────
+  entrance_oscillation_stuck_detector_enabled_ = declare_parameter<bool>(
+    "entrance_oscillation_stuck_detector_enabled", true);
+  entrance_oscillation_no_progress_threshold_m_ = declare_parameter<double>(
+    "entrance_oscillation_no_progress_threshold_m", 0.1);
+  entrance_oscillation_no_progress_min_steps_ = declare_parameter<int>(
+    "entrance_oscillation_no_progress_min_steps", 3);
+  entrance_oscillation_repeated_revisit_min_ = declare_parameter<int>(
+    "entrance_oscillation_repeated_revisit_min", 2);
+  entrance_oscillation_cooldown_goals_ = declare_parameter<int>(
+    "entrance_oscillation_cooldown_goals", 5);
+  entrance_oscillation_escape_max_goals_ = declare_parameter<int>(
+    "entrance_oscillation_escape_max_goals", 5);
+  entrance_oscillation_escape_deactivation_distance_m_ = declare_parameter<double>(
+    "entrance_oscillation_escape_deactivation_distance_m", 1.0);
+  entrance_oscillation_escape_no_oscillation_deactivate_goals_ = declare_parameter<int>(
+    "entrance_oscillation_escape_no_oscillation_deactivate_goals", 2);
+
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
     "selection_strategy", "nearest");
@@ -431,6 +449,54 @@ bool TunnelFrontierExplorerNode::allCandidatesInsideRadius(
   return true;  // all inside
 }
 
+// ── evaluateStuckCondition ──────────────────────────────────────────────────
+
+bool TunnelFrontierExplorerNode::evaluateStuckCondition(
+  const OscillationStatus & osc_status,
+  int num_valid_clusters,
+  double current_goal_distance)
+{
+  if (!entrance_oscillation_stuck_detector_enabled_) {
+    return osc_status.oscillating;
+  }
+
+  if (!osc_status.oscillating) {
+    no_progress_count_ = 0;
+    return false;
+  }
+
+  if (escape_cooldown_remaining_ > 0) {
+    return false;
+  }
+
+  // NOT in branching decision: num_valid_clusters <= 1
+  const bool in_branching_decision = (num_valid_clusters > 1);
+  if (in_branching_decision) {
+    return false;
+  }
+
+  // No-progress check (only within oscillillation zone)
+  const double improvement = last_goal_distance_ - current_goal_distance;
+  if (last_goal_distance_ > 0.0 &&
+      improvement < entrance_oscillation_no_progress_threshold_m_)
+  {
+    no_progress_count_++;
+  } else {
+    no_progress_count_ = 0;
+  }
+  last_goal_distance_ = current_goal_distance;
+
+  const bool no_progress =
+    no_progress_count_ >= entrance_oscillation_no_progress_min_steps_;
+
+  // Repeated revisit: at least M goals in oscillillation zone
+  const bool repeated_revisit =
+    static_cast<int>(entrance_oscillation_detector_.windowSize()) >=
+    entrance_oscillation_repeated_revisit_min_;
+
+  return no_progress && repeated_revisit;
+}
+
 // ── explorationTimerCallback ─────────────────────────────────────────────
 
 void TunnelFrontierExplorerNode::explorationTimerCallback()
@@ -538,23 +604,29 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         frontier_empty_count_ = 0;
         all_suppressed_count_ = 0;
 
-      // ── Stage 4B.3: early oscillation evaluation ─────────────
+      // ── Stage 4D.1: oscillillation evaluation with stuck gating ───
       OscillationStatus osc_status;
       if (entrance_oscillation_enabled_) {
         osc_status = entrance_oscillation_detector_.evaluate();
-        if (entrance_oscillation_response_enabled_ &&
-            osc_status.oscillating && !escape_mode_active_)
+        if (entrance_oscillation_response_enabled_ && !escape_mode_active_)
         {
-          escape_mode_active_ = true;
-          escape_mode_remaining_goals_ = entrance_oscillation_escape_goals_;
-          oscillation_center_ =
-            entrance_oscillation_detector_.getOscillationCenter();
-          RCLCPP_INFO(get_logger(),
-            "[OscillationEscape] activated center=(%.2f,%.2f) "
-            "radius=%.2fm remaining=%d",
-            oscillation_center_.x, oscillation_center_.y,
-            entrance_oscillation_suppression_radius_m_,
-            escape_mode_remaining_goals_);
+          const double dist_to_center = std::hypot(
+            robot_pose.x - oscillation_center_.x,
+            robot_pose.y - oscillation_center_.y);
+          const bool stuck = evaluateStuckCondition(
+            osc_status, static_cast<int>(valid.size()), dist_to_center);
+          if (stuck) {
+            escape_mode_active_ = true;
+            escape_goals_dispatched_ = 0;
+            no_oscillation_count_ = 0;
+            oscillation_center_ =
+              entrance_oscillation_detector_.getOscillationCenter();
+            RCLCPP_INFO(get_logger(),
+              "[OscillationEscape] activated center=(%.2f,%.2f) "
+              "radius=%.2fm",
+              oscillation_center_.x, oscillation_center_.y,
+              entrance_oscillation_suppression_radius_m_);
+          }
         }
       }
 
@@ -1143,19 +1215,64 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
         action_client_->async_send_goal(goal_msg, send_opts);
         transitionTo(ExplorationState::NAVIGATING);
 
-        // Stage 4B.3: decrement escape mode countdown
+        // Stage 4D.1: condition-based escape deactivation
         if (escape_mode_active_) {
-          escape_mode_remaining_goals_--;
-          if (escape_mode_remaining_goals_ <= 0) {
-            escape_mode_active_ = false;
+          escape_goals_dispatched_++;
+
+          // Check no-oscillation counter (updated from early evaluation)
+          if (!osc_status.oscillating) {
+            no_oscillation_count_++;
+          } else {
+            no_oscillation_count_ = 0;
+          }
+
+          bool should_deactivate = false;
+
+          // Max goals reached
+          if (escape_goals_dispatched_ >= entrance_oscillation_escape_max_goals_) {
+            should_deactivate = true;
             RCLCPP_INFO(get_logger(),
-              "[OscillationEscape] mode deactivated after goal dispatch");
+              "[OscillationEscape] deactivated: max_goals reached (%d)",
+              escape_goals_dispatched_);
+          }
+
+          // Robot moved outside oscillillation radius
+          const double dist_to_center = std::hypot(
+            robot_pose.x - oscillation_center_.x,
+            robot_pose.y - oscillation_center_.y);
+          if (dist_to_center > entrance_oscillation_escape_deactivation_distance_m_) {
+            should_deactivate = true;
+            RCLCPP_INFO(get_logger(),
+              "[OscillationEscape] deactivated: outside radius (%.2fm > %.2fm)",
+              dist_to_center, entrance_oscillation_escape_deactivation_distance_m_);
+          }
+
+          // No oscillillation for N consecutive goals
+          if (no_oscillation_count_ >= entrance_oscillation_escape_no_oscillation_deactivate_goals_) {
+            should_deactivate = true;
+            RCLCPP_INFO(get_logger(),
+              "[OscillationEscape] deactivated: no oscillillation for %d goals",
+              no_oscillation_count_);
+          }
+
+          if (should_deactivate) {
+            escape_mode_active_ = false;
+            forced_probe_cooldown_remaining_ = 0;
+            escape_cooldown_remaining_ = entrance_oscillation_cooldown_goals_;
+            RCLCPP_INFO(get_logger(),
+              "[OscillationEscape] cooldown=%d goals",
+              escape_cooldown_remaining_);
           }
         }
 
         // Stage 4C.1: decrement forced probe cooldown
         if (forced_probe_cooldown_remaining_ > 0) {
           forced_probe_cooldown_remaining_--;
+        }
+
+        // Stage 4D.1: decrement escape cooldown
+        if (escape_cooldown_remaining_ > 0) {
+          escape_cooldown_remaining_--;
         }
 
         publishMarkers(
