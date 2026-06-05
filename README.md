@@ -26,6 +26,8 @@
 | **4B.3** | **Oscillation Escape Response** | **SAFE INTEGRATION** — escape mode implemented, 2/3 smoke completion, detector didn't activate (conservative), 11/11 tests |
 | **4B.4** | **Alternating-Pair Detection** | **PASS** — Type B detector fired 2x/run, escape activated 5x/run, 3/3 smoke completion, 17/17 tests |
 | **4B.4-Eval** | **Oscillation Escape Benchmark** | **PASS** — 5/5 completion vs 4B.1's 4/5, escape activates 5x/run, 0 stalls, 15/15 geometry gates |
+| **4C** | **Multi-Topology Pilot** | **PASS** — 6 topologies, identified all-inside oscillillation limitation |
+| **4C.1** | **Forced Escape Probe** | **PASS** — Y-world 2/3, T-junction 3/3, straight 0 forced probes, 0 no-goal states |
 
 ### Stage 1C Baseline Metrics
 
@@ -449,6 +451,7 @@ remained 100% across all stages.
 - [Stage 4B.3 Oscillation Escape Response](docs/stage4b3_oscillation_escape_response.md)
 - [Stage 4B.4 Alternating-Pair Oscillation Detection](docs/stage4b4_alternating_pair_oscillation.md)
 - [Stage 4B.4-Eval Oscillation Escape Benchmark](docs/stage4b4_eval_results.md)
+- [Stage 4C Multi-Topology Evaluation](docs/stage4c_multi_topology_results.md)
 
 ## Roadmap
 
@@ -462,6 +465,8 @@ remained 100% across all stages.
 | **Stage 4B.3** | Oscillation escape response — soft penalty on entrance-cluster goals | 🔄 `stage4b3-oscillation-escape-response` |
 | **Stage 4B.4** | Alternating-pair detection — Type B oscillillation, escape mode activated | ✅ `stage4b4-alternating-pair-oscillation` |
 | **Stage 4B.4-Eval** | Oscillation escape benchmark — 5/5 vs 4B.1's 4/5, 0 stalls | ✅ `stage4b4-eval` |
+| **Stage 4C** | Multi-topology pilot — 6 topologies, all-inside oscillillation found | ✅ `stage4c-multi-topology-eval` |
+| **Stage 4C.1** | Forced escape probe — Y-world 2/3, T-junction 3/3, 0 false positives | ✅ `stage4c1-forced-escape-probe-validated` |
 | **Stage 4C** | L / Y / T / cross / dead-end multi-topology benchmark suite | 📋 |
 | **Stage 5** | Nav2 Tunnel-Aware Planner plugin (wall risk + centerline deviation cost) | 📋 |
 | **Stage 6** | Sensor degradation, narrow passages, dynamic obstacles, rosbag validation | 📋 |
