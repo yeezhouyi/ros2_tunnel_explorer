@@ -28,6 +28,7 @@
 | **4B.4-Eval** | **Oscillation Escape Benchmark** | **PASS** — 5/5 completion vs 4B.1's 4/5, escape activates 5x/run, 0 stalls, 15/15 geometry gates |
 | **4C** | **Multi-Topology Pilot** | **PASS** — 6 topologies, identified all-inside oscillillation limitation |
 | **4C.1** | **Forced Escape Probe** | **PASS** — Y-world 2/3, T-junction 3/3, straight 0 forced probes, 0 no-goal states |
+| **4C-Full** | **Multi-Topology Benchmark** | **EVALUATED** — baseline 72% vs escape 61%; escape helps Y/T but doesn't generalize across all topologies |
 
 ### Stage 1C Baseline Metrics
 
