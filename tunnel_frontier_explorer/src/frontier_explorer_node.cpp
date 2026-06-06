@@ -225,6 +225,14 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   entrance_oscillation_escape_no_oscillation_deactivate_goals_ = declare_parameter<int>(
     "entrance_oscillation_escape_no_oscillation_deactivate_goals", 2);
 
+  // -- Stage 4D.2: cooldown starvation recovery ──────────────────────
+  cooldown_starvation_recovery_enabled_ = declare_parameter<bool>(
+    "cooldown_starvation_recovery_enabled", true);
+  cooldown_starvation_recovery_threshold_ = declare_parameter<int>(
+    "cooldown_starvation_recovery_threshold", 10);
+  cooldown_starvation_recovery_match_tolerance_m_ = declare_parameter<double>(
+    "cooldown_starvation_recovery_match_tolerance_m", 0.2);
+
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
     "selection_strategy", "nearest");
@@ -556,53 +564,100 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           return;
         }
 
-      // Filter blacklisted clusters.
+      // Filter blacklisted clusters (with 4D.2 starvation recovery).
         const auto now = std::chrono::steady_clock::now();
         blacklist_.cleanup(now);
 
         std::vector<FrontierCluster> valid;
+        std::vector<FrontierCluster> suppressed;
         std::vector<Point2D> blacklisted_positions;
         for (const auto & c : clusters) {
-          if (blacklist_.contains(c.representative_world, now)) {
+          bool is_recovery_target = false;
+          if (cooldown_starvation_recovery_active_) {
+            const double d = std::hypot(
+              c.representative_world.x - cooldown_recovery_target_.x,
+              c.representative_world.y - cooldown_recovery_target_.y);
+            is_recovery_target =
+              d < cooldown_starvation_recovery_match_tolerance_m_;
+          }
+          if (!is_recovery_target &&
+              blacklist_.contains(c.representative_world, now))
+          {
+            suppressed.push_back(c);
             blacklisted_positions.push_back(c.representative_world);
           } else {
             valid.push_back(c);
           }
         }
 
-        if (valid.empty()) {
-          if (!clusters.empty() &&
-            clusters.size() == blacklisted_positions.size())
+        const bool all_suppressed =
+          valid.empty() && !clusters.empty() &&
+          suppressed.size() == clusters.size();
+
+        if (all_suppressed) {
+          ++all_suppressed_count_;
+          RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+          "All %zu frontiers suppressed by cooldown (%zu/%zu cycles)",
+          clusters.size(), all_suppressed_count_,
+          k_max_all_suppressed_cycles_);
+          frontier_empty_count_ = 0;
+
+          // 4D.2: activate starvation recovery
+          if (cooldown_starvation_recovery_enabled_ &&
+              !cooldown_starvation_recovery_active_ &&
+              all_suppressed_count_ >=
+                cooldown_starvation_recovery_threshold_)
           {
-            ++all_suppressed_count_;
-            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
-            "All %zu frontiers suppressed by cooldown (%zu/%zu cycles)",
-            clusters.size(), all_suppressed_count_,
-            k_max_all_suppressed_cycles_);
-            frontier_empty_count_ = 0;
-            if (all_suppressed_count_ >= k_max_all_suppressed_cycles_) {
-              RCLCPP_INFO(get_logger(),
-                "No viable frontiers after suppression for %zu cycles — "
-                "exploration complete", k_max_all_suppressed_cycles_);
-              transitionTo(ExplorationState::COMPLETED);
+            // Find best suppressed frontier by info gain
+            int best_idx = -1;
+            double best_gain = -1.0;
+            for (std::size_t i = 0; i < suppressed.size(); ++i) {
+              const double gain =
+                static_cast<double>(suppressed[i].cells.size());
+              if (gain > best_gain) {
+                best_gain = gain;
+                best_idx = static_cast<int>(i);
+              }
             }
-          } else {
-            ++frontier_empty_count_;
-            all_suppressed_count_ = 0;
-            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
-            "No frontiers (%zu/%zu empty cycles)",
-            frontier_empty_count_, k_max_empty_cycles_);
-            if (frontier_empty_count_ >= k_max_empty_cycles_) {
-              RCLCPP_INFO(get_logger(), "No frontiers for %zu cycles — "
-                          "exploration complete", k_max_empty_cycles_);
-              transitionTo(ExplorationState::COMPLETED);
+            if (best_idx >= 0) {
+              cooldown_starvation_recovery_active_ = true;
+              cooldown_recovery_target_ =
+                suppressed[best_idx].representative_world;
+              all_suppressed_count_ = 0;
+              RCLCPP_INFO(get_logger(),
+                "[CooldownRecovery] activated target=(%.2f,%.2f) "
+                "gain=%.0f",
+                cooldown_recovery_target_.x,
+                cooldown_recovery_target_.y, best_gain);
             }
           }
-          publishMarkers(clusters, blacklisted_positions, std::nullopt, {});
-          return;
+
+          if (all_suppressed_count_ >= k_max_all_suppressed_cycles_) {
+            RCLCPP_INFO(get_logger(),
+              "No viable frontiers after suppression for %zu cycles — "
+              "exploration complete", k_max_all_suppressed_cycles_);
+            transitionTo(ExplorationState::COMPLETED);
+          }
+        } else {
+          ++frontier_empty_count_;
+          all_suppressed_count_ = 0;
+          // Deactivate recovery if active
+          if (cooldown_starvation_recovery_active_) {
+            cooldown_starvation_recovery_active_ = false;
+            RCLCPP_INFO(get_logger(),
+              "[CooldownRecovery] deactivated — valid frontier found");
+          }
+          RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+          "No frontiers (%zu/%zu empty cycles)",
+          frontier_empty_count_, k_max_empty_cycles_);
+          if (frontier_empty_count_ >= k_max_empty_cycles_) {
+            RCLCPP_INFO(get_logger(), "No frontiers for %zu cycles — "
+                        "exploration complete", k_max_empty_cycles_);
+            transitionTo(ExplorationState::COMPLETED);
+          }
         }
-        frontier_empty_count_ = 0;
-        all_suppressed_count_ = 0;
+        publishMarkers(clusters, blacklisted_positions, std::nullopt, {});
+        return;
 
       // ── Stage 4D.1: oscillillation evaluation with stuck gating ───
       OscillationStatus osc_status;
@@ -1332,6 +1387,13 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
                 *current_goal_, t, blacklist_radius_,
                 std::chrono::duration_cast<std::chrono::seconds>(
                   std::chrono::duration<double>(blacklist_timeout_seconds_)));
+              // 4D.2: deactivate recovery on goal terminal
+              if (cooldown_starvation_recovery_active_) {
+                cooldown_starvation_recovery_active_ = false;
+                all_suppressed_count_ = 0;
+                RCLCPP_INFO(get_logger(),
+                  "[CooldownRecovery] deactivated on timeout");
+              }
               RCLCPP_INFO(
                 get_logger(), "Blacklisted (%.2f, %.2f) for %.0f s",
                 current_goal_->x, current_goal_->y, blacklist_timeout_seconds_);
@@ -1436,6 +1498,13 @@ void TunnelFrontierExplorerNode::resultCallback(
           current_goal_->x, current_goal_->y,
           goal_success_cooldown_radius_,
           goal_success_cooldown_seconds_);
+        // 4D.2: deactivate recovery on success
+        if (cooldown_starvation_recovery_active_) {
+          cooldown_starvation_recovery_active_ = false;
+          all_suppressed_count_ = 0;
+          RCLCPP_INFO(get_logger(),
+            "[CooldownRecovery] deactivated on success");
+        }
       }
       break;
 
@@ -1465,6 +1534,13 @@ void TunnelFrontierExplorerNode::resultCallback(
           RCLCPP_INFO(get_logger(),
           "Blacklisted (%.2f, %.2f) for %.0f s",
           current_goal_->x, current_goal_->y, blacklist_timeout_seconds_);
+          // 4D.2: deactivate recovery on abort
+          if (cooldown_starvation_recovery_active_) {
+            cooldown_starvation_recovery_active_ = false;
+            all_suppressed_count_ = 0;
+            RCLCPP_INFO(get_logger(),
+              "[CooldownRecovery] deactivated on abort");
+          }
         }
         break;
       }

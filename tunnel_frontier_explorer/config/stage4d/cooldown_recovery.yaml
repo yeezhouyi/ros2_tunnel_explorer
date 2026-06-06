@@ -1,0 +1,14 @@
+# Stage 4D.2: Cooldown Starvation Recovery
+# Recovers one frontier when all are suppressed by cooldown.
+/**:
+  ros__parameters:
+    # ── Baseline: Stage 3D + information_gain_revisit ─────────────────
+    selection_strategy: information_gain_revisit
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    # ── Stage 4D.2: cooldown starvation recovery ─────────────────────
+    cooldown_starvation_recovery_enabled: true
+    cooldown_starvation_recovery_threshold: 10
+    cooldown_starvation_recovery_match_tolerance_m: 0.2

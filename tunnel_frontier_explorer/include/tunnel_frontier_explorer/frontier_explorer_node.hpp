@@ -263,6 +263,13 @@ private:
   // while the cooldown is still active — a false positive.
   static constexpr std::size_t k_max_all_suppressed_cycles_ = 180;
 
+  // Stage 4D.2: cooldown starvation recovery
+  bool cooldown_starvation_recovery_enabled_;
+  int cooldown_starvation_recovery_threshold_;
+  double cooldown_starvation_recovery_match_tolerance_m_;
+  bool cooldown_starvation_recovery_active_ = false;
+  Point2D cooldown_recovery_target_;
+
   // ── Stage 3D sliding-window loop tracking ──────────────────────
   struct GoalBinRecord {
     int bin_x;
