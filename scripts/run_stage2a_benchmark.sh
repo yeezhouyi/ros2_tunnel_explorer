@@ -328,7 +328,7 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
 
     echo "[${SCRIPT_NAME}] Simulation starting in tmux session '${STAGE_SESSION}'..."
     echo "[${SCRIPT_NAME}] Waiting ${WAIT_TIME}s for Nav2 lifecycle startup (attempt ${attempt})..."
-    sleep 30  # Give initial DDS discovery window
+    sleep 30  # DDS discovery window
 
     if "${SCRIPT_DIR}/wait_for_nav2_active.sh" --timeout "${WAIT_TIME}"; then
       NAV2_READY=true

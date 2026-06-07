@@ -28,6 +28,11 @@ def count_pattern(log_path, pattern):
 
 def classify_failure(br, log_counts):
     """Classify failure type by priority."""
+    # Priority 0: Invalid startup — map complete before explorer started
+    if (br.get("goals_dispatched", 0) == 0 and
+        br.get("run_status") == "COMPLETED"):
+        return "INVALID_STARTUP_COMPLETE_MAP"
+
     if br.get("run_status") == "COMPLETED":
         return "SUCCESS_LIKELY"
 
