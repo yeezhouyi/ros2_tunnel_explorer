@@ -190,6 +190,15 @@ private:
   EscapeProbeGenerator probe_generator_;
   Point2D last_selected_goal_;
 
+  // Stage 4E.2: startup bootstrap probe
+  std::optional<Point2D> generateBootstrapProbeGoal(const Point2D & robot);
+  bool startup_bootstrap_enabled_;
+  double startup_bootstrap_distance_m_;
+  int startup_bootstrap_max_attempts_;
+  int startup_bootstrap_no_frontier_cycles_;
+  int startup_bootstrap_attempts_ = 0;
+  int goals_dispatched_ = 0;
+
   // Stage 4D.1: conservative fallback gating
   bool entrance_oscillation_stuck_detector_enabled_;
   double entrance_oscillation_no_progress_threshold_m_;

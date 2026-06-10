@@ -116,6 +116,16 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
   recovery_max_attempts_ = declare_parameter<int>(
     "recovery_max_attempts", 3);
 
+  // -- Stage 4E.2: startup bootstrap probe ──────────────────────────────
+  startup_bootstrap_enabled_ = declare_parameter<bool>(
+    "startup_bootstrap_enabled", true);
+  startup_bootstrap_distance_m_ = declare_parameter<double>(
+    "startup_bootstrap_distance_m", 0.75);
+  startup_bootstrap_max_attempts_ = declare_parameter<int>(
+    "startup_bootstrap_max_attempts", 1);
+  startup_bootstrap_no_frontier_cycles_ = declare_parameter<int>(
+    "startup_bootstrap_no_frontier_cycles", 10);
+
   // -- Stage 4B: tunnel geometry ─────────────────────────────────────────
   tunnel_distance_map_topic_ = declare_parameter<std::string>(
     "tunnel_distance_map_topic", "/tunnel_centerline/distance_map");
@@ -505,6 +515,56 @@ bool TunnelFrontierExplorerNode::evaluateStuckCondition(
   return no_progress && repeated_revisit;
 }
 
+// ── generateBootstrapProbeGoal ───────────────────────────────────────────
+
+std::optional<Point2D> TunnelFrontierExplorerNode::generateBootstrapProbeGoal(
+  const Point2D & robot)
+{
+  // Generate a simple forward probe goal.
+  // Move forward by bootstrap_distance_m in the direction the robot is facing.
+  // If no good direction found, try cardinal directions.
+
+  if (!latest_map_.has_value()) {return std::nullopt;}
+
+  const auto & map = *latest_map_;
+  const double dist = startup_bootstrap_distance_m_;
+
+  // Try forward, then cardinal directions
+  const double yaw = getRobotYaw();
+  const std::vector<double> angles = {yaw, 0.0, M_PI / 2, -M_PI / 2, M_PI};
+
+  const auto & info = map.info;
+  const double res = info.resolution;
+  const double ox = info.origin.position.x;
+  const double oy = info.origin.position.y;
+  const int w = static_cast<int>(info.width);
+  const int h = static_cast<int>(info.height);
+
+  for (double angle : angles) {
+    const double ux = std::cos(angle);
+    const double uy = std::sin(angle);
+    const Point2D probe = {robot.x + dist * ux, robot.y + dist * uy};
+
+    // Check if point is in free space
+    const int col = static_cast<int>(
+      std::round((probe.x - ox) / res - 0.5));
+    const int row = static_cast<int>(
+      std::round((probe.y - oy) / res - 0.5));
+
+    if (row < 0 || row >= h || col < 0 || col >= w) {
+      continue;
+    }
+
+    const std::size_t idx = static_cast<std::size_t>(row) * w +
+                            static_cast<std::size_t>(col);
+    if (map.data[idx] == 0) {
+      return probe;
+    }
+  }
+
+  return std::nullopt;
+}
+
 // ── explorationTimerCallback ─────────────────────────────────────────────
 
 void TunnelFrontierExplorerNode::explorationTimerCallback()
@@ -651,6 +711,50 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           "No frontiers (%zu/%zu empty cycles)",
           frontier_empty_count_, k_max_empty_cycles_);
           if (frontier_empty_count_ >= k_max_empty_cycles_) {
+            // Stage 4E.2: startup bootstrap — don't declare completion
+            // if no goals have been dispatched yet
+            if (startup_bootstrap_enabled_ &&
+                goals_dispatched_ == 0 &&
+                startup_bootstrap_attempts_ < startup_bootstrap_max_attempts_)
+            {
+              RCLCPP_INFO(get_logger(),
+                "[StartupBootstrap] no frontiers, goals=0 — "
+                "attempting bootstrap probe");
+              startup_bootstrap_attempts_++;
+              auto bootstrap_goal = generateBootstrapProbeGoal(robot_pose);
+              if (bootstrap_goal.has_value()) {
+                // Dispatch bootstrap probe goal
+                auto goal_msg = nav2_msgs::action::NavigateToPose::Goal();
+                goal_msg.pose.header.frame_id = global_frame_;
+                goal_msg.pose.header.stamp = this->now();
+                goal_msg.pose.pose.position.x = bootstrap_goal->x;
+                goal_msg.pose.pose.position.y = bootstrap_goal->y;
+                goal_msg.pose.pose.position.z = 0.0;
+                goal_msg.pose.pose.orientation.w = 1.0;
+
+                auto send_opts = rclcpp_action::Client<
+                  nav2_msgs::action::NavigateToPose>::SendGoalOptions();
+                send_opts.goal_response_callback =
+                  [this](const GoalHandle::SharedPtr & h) {goalResponseCallback(h);};
+                send_opts.result_callback =
+                  [this](const GoalHandle::WrappedResult & r) {resultCallback(r);};
+
+                current_goal_ = *bootstrap_goal;
+                navigating_start_time_ = this->now();
+                action_client_->async_send_goal(goal_msg, send_opts);
+                goals_dispatched_++;
+                transitionTo(ExplorationState::NAVIGATING);
+                frontier_empty_count_ = 0;
+                RCLCPP_INFO(get_logger(),
+                  "[StartupBootstrap] dispatched probe to (%.2f, %.2f)",
+                  bootstrap_goal->x, bootstrap_goal->y);
+                return;
+              } else {
+                RCLCPP_INFO(get_logger(),
+                  "[StartupBootstrap] no valid probe found — "
+                  "falling back to completion");
+              }
+            }
             RCLCPP_INFO(get_logger(), "No frontiers for %zu cycles — "
                         "exploration complete", k_max_empty_cycles_);
             transitionTo(ExplorationState::COMPLETED);
@@ -785,6 +889,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
               [this](const GoalHandle::WrappedResult & r) {resultCallback(r);};
 
             action_client_->async_send_goal(goal_msg, send_opts);
+            goals_dispatched_++;
             transitionTo(ExplorationState::NAVIGATING);
 
             // Markers: show recovery probe as cyan sphere.
@@ -1268,6 +1373,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           [this](const GoalHandle::WrappedResult & r) {resultCallback(r);};
 
         action_client_->async_send_goal(goal_msg, send_opts);
+        goals_dispatched_++;
         transitionTo(ExplorationState::NAVIGATING);
 
         // Stage 4D.1: condition-based escape deactivation

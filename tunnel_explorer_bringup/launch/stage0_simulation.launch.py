@@ -71,6 +71,10 @@ def generate_launch_description():
 
     # Nav2 all-in-one TB3 simulation
     # We always disable the built-in RViz in tb3_simulation; launch our own below.
+    # Stage 4E.2: Use short-range lidar model (2.5m range)
+    # to create proper frontier-based exploration.
+    short_range_model = os.path.join(pkg_bringup, 'config', 'gz_waffle_short_range.sdf.xacro')
+
     tb3_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, 'tb3_simulation_launch.py')
@@ -84,6 +88,7 @@ def generate_launch_description():
             'use_rviz': 'False',
             'use_composition': LaunchConfiguration('use_composition'),
             'world': LaunchConfiguration('world'),
+            'robot_sdf': short_range_model,
             # Spawn robot inside the trunk corridor, well clear of the back wall.
             # Default in tb3_simulation_launch.py is (-2.00, -0.50) which lands
             # inside the trunk solid slab — causing costmap corruption.

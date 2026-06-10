@@ -36,3 +36,9 @@
     entrance_oscillation_probe_angle_span_deg: 90.0
     entrance_oscillation_probe_min_wall_distance_m: 0.35
     entrance_oscillation_probe_cooldown_goals: 3
+
+    # ── Stage 4E.2: startup bootstrap probe ───────────────────────────
+    startup_bootstrap_enabled: true
+    startup_bootstrap_distance_m: 0.75
+    startup_bootstrap_max_attempts: 1
+    startup_bootstrap_no_frontier_cycles: 10

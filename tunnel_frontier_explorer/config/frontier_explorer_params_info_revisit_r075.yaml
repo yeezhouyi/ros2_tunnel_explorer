@@ -45,6 +45,12 @@
     recovery_probe_cooldown_seconds: 30.0
     recovery_max_attempts: 3
 
+    # ── Stage 4E.2: startup bootstrap probe ───────────────────────────
+    startup_bootstrap_enabled: true
+    startup_bootstrap_distance_m: 0.75
+    startup_bootstrap_max_attempts: 1
+    startup_bootstrap_no_frontier_cycles: 10
+
     # ── Stage 4B.2: entrance oscillillation detection ──────────────────
     entrance_oscillation_enabled: true
     entrance_oscillation_window_goals: 6
