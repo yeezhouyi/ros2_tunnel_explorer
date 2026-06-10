@@ -242,6 +242,10 @@ TunnelFrontierExplorerNode::TunnelFrontierExplorerNode()
     "cooldown_starvation_recovery_threshold", 10);
   cooldown_starvation_recovery_match_tolerance_m_ = declare_parameter<double>(
     "cooldown_starvation_recovery_match_tolerance_m", 0.2);
+  cooldown_starvation_recovery_max_attempts_ = declare_parameter<int>(
+    "cooldown_starvation_recovery_max_attempts", 3);
+  cooldown_starvation_recovery_repeat_radius_m_ = declare_parameter<double>(
+    "cooldown_starvation_recovery_repeat_radius_m", 0.5);
 
   // -- Stage 2B parameters --------------------------------------------------
   selection_strategy_ = declare_parameter<std::string>(
@@ -662,7 +666,7 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
           k_max_all_suppressed_cycles_);
           frontier_empty_count_ = 0;
 
-          // 4D.2: activate starvation recovery
+          // 4D.2: activate starvation recovery (with loop guard)
           if (cooldown_starvation_recovery_enabled_ &&
               !cooldown_starvation_recovery_active_ &&
               all_suppressed_count_ >=
@@ -680,15 +684,43 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
               }
             }
             if (best_idx >= 0) {
-              cooldown_starvation_recovery_active_ = true;
-              cooldown_recovery_target_ =
-                suppressed[best_idx].representative_world;
-              all_suppressed_count_ = 0;
-              RCLCPP_INFO(get_logger(),
-                "[CooldownRecovery] activated target=(%.2f,%.2f) "
-                "gain=%.0f",
-                cooldown_recovery_target_.x,
-                cooldown_recovery_target_.y, best_gain);
+              const auto & best = suppressed[best_idx];
+
+              // Loop guard: check if we're repeating the same target
+              if (cooldown_recovery_attempts_ >=
+                  cooldown_starvation_recovery_max_attempts_)
+              {
+                RCLCPP_INFO(get_logger(),
+                  "[CooldownRecovery] max attempts (%d) reached — "
+                  "giving up",
+                  cooldown_recovery_attempts_);
+                // Don't activate recovery, let completion check proceed
+              } else {
+                // Check if same target as last time
+                const double dist = std::hypot(
+                  best.representative_world.x - cooldown_recovery_target_.x,
+                  best.representative_world.y - cooldown_recovery_target_.y);
+                if (cooldown_recovery_attempts_ > 0 &&
+                    dist < cooldown_starvation_recovery_repeat_radius_m_)
+                {
+                  RCLCPP_INFO(get_logger(),
+                    "[CooldownRecovery] same target — "
+                    "attempts=%d max=%d — giving up",
+                    cooldown_recovery_attempts_,
+                    cooldown_starvation_recovery_max_attempts_);
+                } else {
+                  cooldown_starvation_recovery_active_ = true;
+                  cooldown_recovery_target_ = best.representative_world;
+                  cooldown_recovery_attempts_++;
+                  all_suppressed_count_ = 0;
+                  RCLCPP_INFO(get_logger(),
+                    "[CooldownRecovery] activated target=(%.2f,%.2f) "
+                    "gain=%.0f attempts=%d",
+                    cooldown_recovery_target_.x,
+                    cooldown_recovery_target_.y, best_gain,
+                    cooldown_recovery_attempts_);
+                }
+              }
             }
           }
 

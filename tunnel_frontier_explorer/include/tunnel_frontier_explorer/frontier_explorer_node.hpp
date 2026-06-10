@@ -278,6 +278,9 @@ private:
   double cooldown_starvation_recovery_match_tolerance_m_;
   bool cooldown_starvation_recovery_active_ = false;
   Point2D cooldown_recovery_target_;
+  int cooldown_recovery_attempts_ = 0;
+  int cooldown_starvation_recovery_max_attempts_;
+  double cooldown_starvation_recovery_repeat_radius_m_;
 
   // ── Stage 3D sliding-window loop tracking ──────────────────────
   struct GoalBinRecord {
