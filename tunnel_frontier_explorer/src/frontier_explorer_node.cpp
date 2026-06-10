@@ -748,6 +748,11 @@ void TunnelFrontierExplorerNode::explorationTimerCallback()
                 RCLCPP_INFO(get_logger(),
                   "[StartupBootstrap] dispatched probe to (%.2f, %.2f)",
                   bootstrap_goal->x, bootstrap_goal->y);
+                RCLCPP_INFO(get_logger(),
+                  "Goal: (%.2f, %.2f) dist=%.2f "
+                  "score=0.0000 [1 cand] type=startup_bootstrap",
+                  bootstrap_goal->x, bootstrap_goal->y,
+                  startup_bootstrap_distance_m_);
                 return;
               } else {
                 RCLCPP_INFO(get_logger(),
