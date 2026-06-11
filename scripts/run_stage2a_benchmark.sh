@@ -330,6 +330,24 @@ while [ "${ATTEMPT_NUM}" -le $((RUNTIME_RETRIES + 1)) ]; do
     echo "[${SCRIPT_NAME}] Waiting ${WAIT_TIME}s for Nav2 lifecycle startup (attempt ${attempt})..."
     sleep 30  # DDS discovery window
 
+    # Stage 4F.0a: Wait for odom topic to ensure bridge is active before Nav2
+    echo "[${SCRIPT_NAME}] Waiting for /odom topic..."
+    ODOM_WAIT_START=$(date +%s)
+    ODOM_READY=false
+    while true; do
+      ODOM_ELAPSED=$(($(date +%s) - ODOM_WAIT_START))
+      [ "${ODOM_ELAPSED}" -ge 60 ] && break
+      if timeout 3 ros2 topic echo /odom --once 2>/dev/null | grep -q "header:"; then
+        ODOM_READY=true
+        echo "[${SCRIPT_NAME}] /odom topic available at +${ODOM_ELAPSED}s"
+        break
+      fi
+      sleep 2
+    done
+    if ! ${ODOM_READY}; then
+      echo "[${SCRIPT_NAME}] WARNING: /odom not ready after 60s, proceeding anyway"
+    fi
+
     if "${SCRIPT_DIR}/wait_for_nav2_active.sh" --timeout "${WAIT_TIME}"; then
       NAV2_READY=true
       break
