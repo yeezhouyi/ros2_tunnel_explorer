@@ -1,0 +1,43 @@
+# Stage 4G: Final Default Strategy
+# baseline + startup_bootstrap + cooldown_loop_guard
+/**:
+  ros__parameters:
+    # ── Baseline scoring ─────────────────────────────────────────────
+    selection_strategy: information_gain_revisit
+    weight_information_gain: 1.0
+    weight_distance: 1.0
+    weight_revisit: 1.5
+
+    # ── Stage 4E.2: startup bootstrap probe ─────────────────────────
+    startup_bootstrap_enabled: true
+    startup_bootstrap_distance_m: 0.75
+    startup_bootstrap_max_attempts: 1
+    startup_bootstrap_no_frontier_cycles: 10
+
+    # ── Stage 4D.2: cooldown starvation recovery ─────────────────────
+    cooldown_starvation_recovery_enabled: true
+    cooldown_starvation_recovery_threshold: 10
+    cooldown_starvation_recovery_match_tolerance_m: 0.2
+    cooldown_starvation_recovery_max_attempts: 3
+    cooldown_starvation_recovery_repeat_radius_m: 0.5
+
+    # ── Stage 4B.2: oscillillation detection (passive, no response) ──
+    entrance_oscillation_enabled: true
+    entrance_oscillation_window_goals: 6
+    entrance_oscillation_radius_m: 2.0
+    entrance_oscillation_min_repeated_goals: 4
+    entrance_oscillation_max_unique_bins: 2
+    entrance_oscillation_min_revisit_ratio: 0.35
+    entrance_oscillation_min_goals_to_check: 4
+    entrance_oscillation_detect_alternating_pair: true
+    entrance_oscillation_pair_cluster_radius_m: 0.75
+    entrance_oscillation_pair_max_spatial_radius_m: 1.5
+    entrance_oscillation_pair_min_cluster_count: 2
+    entrance_oscillation_pair_min_alternation_score: 0.5
+
+    # ── Escape / recovery / wall_risk: DISABLED ─────────────────────
+    entrance_oscillation_response_enabled: false
+    entrance_oscillation_escape_goals: 3
+    entrance_oscillation_suppression_radius_m: 1.5
+    entrance_oscillation_escape_penalty: 0.75
+    entrance_oscillation_force_escape_probe: false
