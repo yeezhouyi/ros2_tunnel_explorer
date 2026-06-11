@@ -14,8 +14,8 @@
     startup_bootstrap_max_attempts: 1
     startup_bootstrap_no_frontier_cycles: 10
 
-    # ── Stage 4D.2: cooldown starvation recovery ─────────────────────
-    cooldown_starvation_recovery_enabled: true
+    # ── Stage 4D.2: cooldown starvation recovery (DISABLED in default) ─
+    cooldown_starvation_recovery_enabled: false
     cooldown_starvation_recovery_threshold: 10
     cooldown_starvation_recovery_match_tolerance_m: 0.2
     cooldown_starvation_recovery_max_attempts: 3
