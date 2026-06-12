@@ -29,6 +29,9 @@
 | **4C** | **Multi-Topology Pilot** | **PASS** — 6 topologies, identified all-inside oscillillation limitation |
 | **4C.1** | **Forced Escape Probe** | **PASS** — Y-world 2/3, T-junction 3/3, straight 0 forced probes, 0 no-goal states |
 | **4C-Full** | **Multi-Topology Benchmark** | **EVALUATED** — baseline 72% vs escape 61%; escape helps Y/T but doesn't generalize across all topologies |
+| **4G.0** | **Final Default Config** | **PASS** — baseline + bootstrap + cooldown loop guard; escape/recovery/wall_risk disabled |
+| **4G.1** | **Final Default Validation** | **PASS** — 20/20 completed, all goals=1, no fake completions |
+| **4G.2** | **Optional Modules** | **CLASSIFIED** — forced_escape, cooldown_recovery, wall_risk validated but not default |
 
 ### Stage 1C Baseline Metrics
 
@@ -453,6 +456,7 @@ remained 100% across all stages.
 - [Stage 4B.4 Alternating-Pair Oscillation Detection](docs/stage4b4_alternating_pair_oscillation.md)
 - [Stage 4B.4-Eval Oscillation Escape Benchmark](docs/stage4b4_eval_results.md)
 - [Stage 4C Multi-Topology Evaluation](docs/stage4c_multi_topology_results.md)
+- [Stage 4G.2 Optional Modules Classification](docs/stage4g2_optional_modules.md)
 
 ## Roadmap
 
