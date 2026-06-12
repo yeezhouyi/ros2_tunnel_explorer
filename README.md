@@ -2,7 +2,11 @@
 
 面向隧道巡检场景的 ROS2 自主探索与风险感知路径规划系统。
 
-## Status
+## Status: STABLE
+
+**Final Default Strategy**: `information_gain_revisit + startup_bootstrap + cooldown_loop_guard`
+**Validated**: 20/20 completed, all goals=1, no fake completions
+**Optional Modules**: cooldown_recovery, forced_escape, wall_risk_weak (validated, not default)
 
 | Stage | Description | Status |
 |-------|-------------|--------|
@@ -457,6 +461,9 @@ remained 100% across all stages.
 - [Stage 4B.4-Eval Oscillation Escape Benchmark](docs/stage4b4_eval_results.md)
 - [Stage 4C Multi-Topology Evaluation](docs/stage4c_multi_topology_results.md)
 - [Stage 4G.2 Optional Modules Classification](docs/stage4g2_optional_modules.md)
+- [Final Strategy](docs/final_strategy.md)
+- [Benchmark Summary](docs/benchmark_summary.md)
+- [Stage 4 Closure](docs/stage4_closure.md)
 
 ## Roadmap
 
