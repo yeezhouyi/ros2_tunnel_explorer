@@ -43,18 +43,39 @@ GridMap makeMap(
   return map;
 }
 
+namespace
+{
+
+// ROS2's gtest_vendor builds gtest with exceptions disabled, which silently
+// breaks EXPECT_THROW/EXPECT_NO_THROW — use explicit try/catch instead.
+template<typename Fn>
+bool throwsInvalidArgument(Fn && fn)
+{
+  try {
+    fn();
+    return false;
+  } catch (const std::invalid_argument &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+}  // namespace
+
 TEST(GridGeometryTest, ThrowsOnInvalidMap)
 {
   GridMap map;
-  EXPECT_THROW(GridGeometry(map), std::invalid_argument);
+  EXPECT_TRUE(throwsInvalidArgument([&]() {GridGeometry g(map); (void)g;}));
 
   map.width = 10;
   map.height = 10;
-  EXPECT_THROW(GridGeometry(map), std::invalid_argument);  // data missing
+  // data missing
+  EXPECT_TRUE(throwsInvalidArgument([&]() {GridGeometry g(map); (void)g;}));
 
   map.data.assign(100, OCC_FREE);
-  map.resolution = 0.0;
-  EXPECT_THROW(GridGeometry(map), std::invalid_argument);  // bad resolution
+  map.resolution = 0.0;  // bad resolution
+  EXPECT_TRUE(throwsInvalidArgument([&]() {GridGeometry g(map); (void)g;}));
 }
 
 TEST(GridGeometryTest, NonUnitResolutionRoundTrip)

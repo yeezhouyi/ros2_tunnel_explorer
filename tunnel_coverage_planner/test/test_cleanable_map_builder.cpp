@@ -80,6 +80,21 @@ Point2D seedAt(double x, double y)
   return Point2D{x, y};
 }
 
+/// ROS2's gtest_vendor builds gtest without exceptions, silently breaking
+/// EXPECT_THROW/EXPECT_NO_THROW; use explicit try/catch instead.
+template<typename Fn>
+bool throwsInvalidArgument(Fn && fn)
+{
+  try {
+    fn();
+    return false;
+  } catch (const std::invalid_argument &) {
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 // 2.0 x 1.5 m all-free room: 40 x 30 cells at 0.05 m.
 MapSpec rectSpec()
 {
@@ -100,12 +115,14 @@ TEST(CleanableMapBuilderTest, ThrowsOnSeedOutsideNavigable)
   RobotCleaningGeometry robot;
 
   // Seed on an occupied cell.
-  EXPECT_THROW(
-    builder.build(map, robot, seedAt(0.75, 0.75)), std::invalid_argument);
+  EXPECT_TRUE(throwsInvalidArgument([&]() {
+    builder.build(map, robot, seedAt(0.75, 0.75));
+  }));
 
   // Seed outside the map.
-  EXPECT_THROW(
-    builder.build(map, robot, seedAt(100.0, 100.0)), std::invalid_argument);
+  EXPECT_TRUE(throwsInvalidArgument([&]() {
+    builder.build(map, robot, seedAt(100.0, 100.0));
+  }));
 }
 
 TEST(CleanableMapBuilderTest, AllFreeRoomInvariantsAndZeroExempt)
@@ -213,8 +230,9 @@ TEST(CleanableMapBuilderTest, NarrowCorridorExcluded)
   RobotCleaningGeometry robot;
 
   // Seed inside the 0.3 m gap -> not navigable -> rejected.
-  EXPECT_THROW(
-    builder.build(map, robot, seedAt(0.5, 0.5)), std::invalid_argument);
+  EXPECT_TRUE(throwsInvalidArgument([&]() {
+    builder.build(map, robot, seedAt(0.5, 0.5));
+  }));
 }
 
 TEST(CleanableMapBuilderTest, WideEnoughGapIsNavigable)
@@ -367,10 +385,10 @@ TEST(CleanableMapBuilderTest, InvalidConfigRejected)
   GridGeometry geo(map);
   CleanableMapBuilderConfig cfg;
   cfg.free_max = 80;   // >= occupied_min(65) -> invalid
-  EXPECT_THROW(CleanableMapBuilder(geo, cfg), std::invalid_argument);
+  EXPECT_TRUE(throwsInvalidArgument([&]() {CleanableMapBuilder b(geo, cfg); (void)b;}));
   cfg.free_max = 0;
   cfg.connectivity = 5;
-  EXPECT_THROW(CleanableMapBuilder(geo, cfg), std::invalid_argument);
+  EXPECT_TRUE(throwsInvalidArgument([&]() {CleanableMapBuilder b(geo, cfg); (void)b;}));
 }
 
 }  // namespace

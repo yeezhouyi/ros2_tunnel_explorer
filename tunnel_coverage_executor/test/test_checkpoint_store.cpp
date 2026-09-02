@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -52,7 +53,15 @@ TEST(CheckpointStoreTest, SaveAndLoadRoundTrip)
   in.path_length_m = 12.5;
   in.task_duration_s = 42.0;
 
-  EXPECT_NO_THROW(CheckpointStore::save(path, in));
+  {
+    bool saved = false;
+    try {
+      CheckpointStore::save(path, in);
+      saved = true;
+    } catch (const std::exception &) {
+    }
+    EXPECT_TRUE(saved);
+  }
 
   CheckpointData out;
   const auto status = CheckpointStore::loadAndValidate(

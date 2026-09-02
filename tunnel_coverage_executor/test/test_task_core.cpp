@@ -109,9 +109,17 @@ TEST(CoverageTaskCoreTest, BlockedTempIsRevisitedAfterPending)
 
 TEST(CoverageTaskCoreTest, RejectsEmptyPlan)
 {
-  EXPECT_THROW(
-    CoverageTaskCore(std::vector<CoverageSegment>{}, CoverageTaskCore::Options{}),
-    std::invalid_argument);
+  bool threw = false;
+  try {
+    CoverageTaskCore core(
+      std::vector<CoverageSegment>{}, CoverageTaskCore::Options{});
+    (void)core;
+  } catch (const std::invalid_argument &) {
+    threw = true;
+  } catch (...) {
+    // wrong exception type
+  }
+  EXPECT_TRUE(threw);
 }
 
 TEST(CoverageTaskCoreTest, CheckpointDispositionsApplyById)
@@ -141,13 +149,29 @@ TEST(CoverageTaskCoreTest, CheckpointIdMismatchThrows)
   CheckpointData cp;
   cp.segment_ids = {"other0", "other1"};
   cp.dispositions = {DISP_COVERED, DISP_COVERED};
-  EXPECT_THROW(core.applyCheckpointDispositions(cp), std::invalid_argument);
+  {
+    bool threw = false;
+    try {
+      core.applyCheckpointDispositions(cp);
+    } catch (const std::invalid_argument &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+  }
 
   // Different count -> refuse.
   CheckpointData cp2;
   cp2.segment_ids = {"w0"};
   cp2.dispositions = {DISP_COVERED};
-  EXPECT_THROW(core.applyCheckpointDispositions(cp2), std::invalid_argument);
+  {
+    bool threw = false;
+    try {
+      core.applyCheckpointDispositions(cp2);
+    } catch (const std::invalid_argument &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+  }
 }
 
 }  // namespace

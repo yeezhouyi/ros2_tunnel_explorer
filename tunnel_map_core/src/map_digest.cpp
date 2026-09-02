@@ -34,7 +34,7 @@ void appendByte(std::ostringstream & os, std::int8_t v)
 
 std::uint64_t fnv1a64(const std::string & bytes)
 {
-  constexpr std::uint64_t kOffsetBasis = 1469598103934665603ULL;
+  constexpr std::uint64_t kOffsetBasis = 14695981039346656037ULL;
   constexpr std::uint64_t kPrime = 1099511628211ULL;
   std::uint64_t h = kOffsetBasis;
   for (const unsigned char c : bytes) {
