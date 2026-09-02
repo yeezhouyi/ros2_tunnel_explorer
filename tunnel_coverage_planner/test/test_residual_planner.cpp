@@ -91,7 +91,9 @@ TEST(ResidualPlannerTest, FullCoverageHasNoResidual)
   const auto main = planner.plan();
   ASSERT_TRUE(main.valid());
 
-  const auto counts = execute(masks, main.segments, false);
+  // Simulate a complete pass: every effective cell visited.
+  const auto n = geo.width() * geo.height();
+  std::vector<std::int32_t> counts(n, 1);
   ResidualPlanner residual(geo, masks, robot, cfg);
   const auto r = residual.planResidual(counts);
   EXPECT_EQ(r.total_uncovered_cells, 0u);
@@ -161,13 +163,17 @@ TEST(ResidualPlannerTest, TinyLeftoverIsExemptedNotDropped)
   ASSERT_TRUE(main.valid());
 
   // Full coverage, then punch a tiny 2x2 uncovered hole (4 cells < min gate).
+  // Any naturally leftover corner cells are promoted to "covered" so the
+  // hole is the only residual.
   auto counts = execute(masks, main.segments, false);
   const std::size_t w = geo.width();
   const std::size_t hole_idx = 30 * w + 30;
-  counts[hole_idx] = 0;
-  counts[hole_idx + 1] = 0;
-  counts[hole_idx + w] = 0;
-  counts[hole_idx + w + 1] = 0;
+  for (std::size_t i = 0; i < counts.size(); ++i) {
+    const bool in_hole =
+      i == hole_idx || i == hole_idx + 1 ||
+      i == hole_idx + w || i == hole_idx + w + 1;
+    counts[i] = in_hole ? 0 : (counts[i] == 0 ? 1 : counts[i]);
+  }
 
   ResidualPlanner residual(geo, masks, robot, cfg);
   const auto r = residual.planResidual(counts);
