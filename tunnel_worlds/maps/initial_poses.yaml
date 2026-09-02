@@ -6,3 +6,15 @@ profiles:
     x: 0.0
     y: 0.0
     yaw: 0.0
+  cleaning_room_pillar:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  cleaning_room_l_shape:
+    x: 1.0
+    y: 0.0
+    yaw: 0.0
+  cleaning_room_doorway:
+    x: -1.5
+    y: 0.0
+    yaw: 0.0
