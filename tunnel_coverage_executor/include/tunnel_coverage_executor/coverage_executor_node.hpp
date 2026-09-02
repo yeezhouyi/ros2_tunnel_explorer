@@ -151,6 +151,12 @@ private:
   int exec_index_ = -1;
   int exec_attempt_ = 0;
   bool child_sent_ = false;
+  /// When the current child goal was sent (for the timeout watchdog).
+  rclcpp::Time child_send_time_;
+  /// Max seconds a single Nav2 child goal may run before being cancelled.
+  double child_goal_timeout_s_ = 60.0;
+  /// Extra seconds allowed for the cancellation to complete.
+  double cancel_grace_s_ = 20.0;
   // What the in-flight child goal is doing:
   // 1 = repositioning to a work-line start (approach), 2 = a plan TRANSITION
   // segment, 3 = following a WORK segment.

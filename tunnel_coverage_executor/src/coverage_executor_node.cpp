@@ -68,6 +68,8 @@ CoverageExecutorNode::CoverageExecutorNode()
     "min_effective_coverage", 0.97);
   max_attempts_per_segment_ = declare_parameter<int>(
     "max_attempts_per_segment", 2);
+  child_goal_timeout_s_ = declare_parameter<double>(
+    "child_goal_timeout_s", 60.0);
   checkpoint_dir_ = declare_parameter<std::string>(
     "checkpoint_dir", "/tmp/tunnel_coverage_checkpoints");
 
@@ -229,9 +231,31 @@ void CoverageExecutorNode::tickTimerCallback()
   } else {
     switch (phase_) {
       case PHASE_TRANSITING:
-      case PHASE_EXECUTING_SEGMENT:
+      case PHASE_EXECUTING_SEGMENT: {
+        // Watchdog: a single Nav2 child goal must not run forever.
+        if (child_sent_) {
+          const double run = (now() - child_send_time_).seconds();
+          if (run > child_goal_timeout_s_ + cancel_grace_s_) {
+            RCLCPP_WARN(get_logger(),
+              "Child goal stuck after %.1f s — forcing failure", run);
+            pending_outcome_ = ChildOutcome{exec_index_, false};
+            child_sent_ = false;
+            nav_gh_.reset();
+            follow_gh_.reset();
+          } else if (run > child_goal_timeout_s_) {
+            RCLCPP_WARN(get_logger(),
+              "Child goal timeout after %.1f s — cancelling", run);
+            if (nav_gh_) {
+              nav_client_->async_cancel_goal(nav_gh_);
+            }
+            if (follow_gh_) {
+              follow_client_->async_cancel_goal(follow_gh_);
+            }
+          }
+        }
         tickExecution();
         break;
+      }
       case PHASE_CANCELLING:
         tickCancelling();
         break;
@@ -430,6 +454,7 @@ void CoverageExecutorNode::sendNextSegment()
   if (idx != exec_index_) {
     exec_index_ = idx;
     exec_attempt_ = 0;  // fresh attempts for a new segment
+    RCLCPP_INFO(get_logger(), "-> next segment %s (idx=%d)", seg.id.c_str(), idx);
   }
   if (seg.type == tunnel_coverage_planner::SegmentType::TRANSITION) {
     setPhase(PHASE_TRANSITING);
@@ -599,6 +624,7 @@ void CoverageExecutorNode::sendNavigate(
     };
   nav_gh_.reset();
   child_sent_ = true;
+  child_send_time_ = now();
   nav_client_->async_send_goal(goal, send_opts);
 }
 
@@ -653,6 +679,7 @@ void CoverageExecutorNode::sendFollow(
     };
   follow_gh_.reset();
   child_sent_ = true;
+  child_send_time_ = now();
   follow_client_->async_send_goal(goal, send_opts);
 }
 
