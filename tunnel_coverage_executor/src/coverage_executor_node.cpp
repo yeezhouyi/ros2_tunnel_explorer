@@ -852,7 +852,11 @@ void CoverageExecutorNode::publishStatus()
     s.repeat_ratio = m.repeat_ratio;
     s.path_length_m = m.path_length_m;
   }
-  s.last_update_seconds = (now() - task_start_time_).seconds();
+  // Guard against subtracting a default-constructed (never started) task
+  // time: rclcpp::Time default may use a different time source than now().
+  if (task_active_) {
+    s.last_update_seconds = (now() - task_start_time_).seconds();
+  }
   status_pub_->publish(s);
 }
 

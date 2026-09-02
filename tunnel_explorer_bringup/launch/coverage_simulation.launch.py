@@ -147,7 +147,7 @@ def generate_launch_description():
         executable='tunnel_coverage_executor',
         name='tunnel_coverage_executor',
         output='screen',
-        parameters=[executor_params],
+        parameters=[executor_params, {'use_sim_time': True}],
     )
 
     fastdds_env = SetEnvironmentVariable(
