@@ -65,6 +65,12 @@ struct CoverageMetrics
 /// class only performs the geometric sweep.  A pose pair is interpolated at
 /// steps no larger than half a cell before the circular cleaning footprint is
 /// stamped, so sparse odometry does not create holes (R3, R19).
+///
+/// Counting semantics: one `addSweepSegment` call corresponds to one sweep
+/// *pass* (the executor batches one call per executed work row).  A cell is
+/// incremented at most once per call, so overlapping interpolation stamps
+/// inside a single row do not create fake "repeats"; revisiting a cell in a
+/// later row increments it again (repeat coverage, R4).
 class CoverageTracker
 {
 public:
@@ -77,11 +83,12 @@ public:
     const CoverageMasks & masks,
     double sweep_radius_m);
 
-  /// Sweep the footprint along the straight segment [a, b] (world frame).
+  /// Sweep the footprint along the straight segment [a, b] (world frame) as
+  /// one pass.
   void addSweepSegment(
     const tunnel_map_core::Point2D & a, const tunnel_map_core::Point2D & b);
 
-  /// Stamp the footprint once at @p pose (zero-length segment).
+  /// Stamp the footprint once at @p pose (zero-length pass).
   void addToolPose(const ToolPose & pose);
 
   /// Recompute all metrics from current visit counts.
@@ -109,12 +116,18 @@ private:
   double sweep_radius_m_;
   double max_step_m_;
   std::vector<std::int32_t> counts_;
+  /// Cells stamped in the current pass (size = cell count).
+  std::vector<std::uint8_t> mark_buf_;
   double path_length_m_ = 0.0;
-  /// Sum of per-stamp marked areas (repeat-inclusive), m^2.
+  /// Sum of per-pass marked areas (repeat-inclusive), m^2.
   double total_swept_area_m2_ = 0.0;
 
-  /// Stamp the cleaning disc at @p centre; returns the number of cells marked.
+  /// Stamp the cleaning disc at @p centre into mark_buf_; returns the number
+  /// of cells newly marked in this pass.
   std::size_t stampDisc(const tunnel_map_core::Point2D & centre);
+
+  /// Fold the current pass (mark_buf_) into the per-cell pass counts.
+  void commitPass();
 };
 
 }  // namespace tunnel_coverage_planner

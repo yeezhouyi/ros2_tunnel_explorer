@@ -52,6 +52,7 @@ CoverageTracker::CoverageTracker(
     throw std::invalid_argument("CoverageTracker — inconsistent masks");
   }
   counts_.assign(masks_.intended_target.size(), 0);
+  mark_buf_.assign(masks_.intended_target.size(), 0);
 }
 
 std::size_t CoverageTracker::stampDisc(const tunnel_map_core::Point2D & centre)
@@ -66,7 +67,7 @@ std::size_t CoverageTracker::stampDisc(const tunnel_map_core::Point2D & centre)
   }
   const std::size_t w = geometry_.width();
   const std::size_t h = geometry_.height();
-  std::size_t marked = 0;
+  std::size_t newly_marked = 0;
 
   for (int dr = -k; dr <= k; ++dr) {
     for (int dc = -k; dc <= k; ++dc) {
@@ -82,40 +83,62 @@ std::size_t CoverageTracker::stampDisc(const tunnel_map_core::Point2D & centre)
       const auto centre_world = geometry_.gridToWorld(
         static_cast<int>(row), static_cast<int>(col));
       if (dist2(centre, centre_world) <= r2) {
-        ++counts_[geometry_.index(static_cast<int>(row), static_cast<int>(col))];
-        ++marked;
+        auto & m = mark_buf_[geometry_.index(
+          static_cast<int>(row), static_cast<int>(col))];
+        if (m == 0) {
+          m = 1;
+          ++newly_marked;
+        }
       }
     }
   }
-  return marked;
+  return newly_marked;
 }
 
 void CoverageTracker::addSweepSegment(
   const tunnel_map_core::Point2D & a, const tunnel_map_core::Point2D & b)
 {
+  const double cell_area = geometry_.cellSize() * geometry_.cellSize();
   const double len = std::sqrt(dist2(a, b));
+
+  // Clear the per-pass mark buffer.
+  std::fill(mark_buf_.begin(), mark_buf_.end(), 0);
+
   if (len <= 0.0) {
-    total_swept_area_m2_ +=
-      static_cast<double>(stampDisc(a)) * geometry_.cellSize() * geometry_.cellSize();
+    const std::size_t marked = stampDisc(a);
+    total_swept_area_m2_ += static_cast<double>(marked) * cell_area;
+    commitPass();
     return;
   }
   // Interpolate at steps no larger than half a cell so that sparse odometry
   // does not create uncovered holes between samples.
   const int n = std::max(1, static_cast<int>(std::ceil(len / max_step_m_)));
+  std::size_t union_marked = 0;
   for (int i = 0; i <= n; ++i) {
     const double t = static_cast<double>(i) / static_cast<double>(n);
     tunnel_map_core::Point2D p;
     p.x = a.x + t * (b.x - a.x);
     p.y = a.y + t * (b.y - a.y);
-    total_swept_area_m2_ +=
-      static_cast<double>(stampDisc(p)) * geometry_.cellSize() * geometry_.cellSize();
+    union_marked += stampDisc(p);
   }
+  total_swept_area_m2_ += static_cast<double>(union_marked) * cell_area;
+  commitPass();
   path_length_m_ += len;
 }
 
 void CoverageTracker::addToolPose(const ToolPose & pose)
 {
   addSweepSegment(pose.position, pose.position);
+}
+
+void CoverageTracker::commitPass()
+{
+  const auto n = counts_.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    if (mark_buf_[i] != 0) {
+      counts_[i] = counts_[i] == 0 ? 1 : counts_[i] + 1;
+    }
+  }
 }
 
 std::size_t CoverageTracker::uniqueCoveredCells() const

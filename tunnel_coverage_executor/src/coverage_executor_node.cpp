@@ -1,4 +1,4 @@
-// Copyright 2026 zhouyi
+﻿// Copyright 2026 zhouyi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -379,6 +379,7 @@ void CoverageExecutorNode::beginTask(
     task_start_time_ = now();
     task_duration_s_ = 0.0;
     last_tool_pose_.reset();
+    work_row_start_pose_.reset();
     sampling_enabled_ = true;
     setPhase(PHASE_EXECUTING_SEGMENT);
     RCLCPP_INFO(get_logger(),
@@ -458,6 +459,7 @@ void CoverageExecutorNode::sendNextSegment()
     return;
   }
   child_mode_ = 3;  // follow the work line
+  work_row_start_pose_ = pose;
   sendFollow(seg);
 }
 
@@ -491,6 +493,7 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
     // failure retries the approach (or fails the segment when exhausted).
     if (ok) {
       child_mode_ = 3;
+      work_row_start_pose_ = tunnel_map_core::Point2D{seg.start_x, seg.start_y};
       sendFollow(seg);
       return;
     }
@@ -523,10 +526,22 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
   }
 
   if (ok) {
+    // Commit the real swept pass of this work row into the CoverageGrid:
+    // from the row-start pose to the robot's current (end) pose.  Nav2
+    // transitions never sweep (R3/R9).
+    if (mode == 3 && tracker_ && work_row_start_pose_) {
+      tunnel_map_core::Point2D end_pose;
+      if (getRobotPose(end_pose)) {
+        tracker_->addSweepSegment(*work_row_start_pose_, end_pose);
+      }
+    }
+    work_row_start_pose_.reset();
     core_->markCovered(static_cast<std::size_t>(idx));
     RCLCPP_INFO(get_logger(), "Segment %s -> COVERED", seg.id.c_str());
     return;
   }
+
+  work_row_start_pose_.reset();
 
   // Transition (mode 2) or work (mode 3) failure: bounded retry.
   if (exec_attempt_ < max_attempts_per_segment_) {
@@ -665,22 +680,11 @@ bool CoverageExecutorNode::getRobotPose(tunnel_map_core::Point2D & pose) const
 
 void CoverageExecutorNode::tfSamplerCallback()
 {
-  if (!task_active_ || !sampling_enabled_ || !tracker_ ||
-    phase_ != PHASE_EXECUTING_SEGMENT)
-  {
-    last_tool_pose_.reset();
-    return;
-  }
-  tunnel_map_core::Point2D pose;
-  if (!getRobotPose(pose)) {
-    // TF lost/frozen: stop writing coverage (R19), never extrapolate.
-    last_tool_pose_.reset();
-    return;
-  }
-  if (last_tool_pose_) {
-    tracker_->addSweepSegment(*last_tool_pose_, pose);
-  }
-  last_tool_pose_ = pose;
+  // Coverage passes are batched per executed work row in processOutcome():
+  // stamping every 10 Hz sample would turn interpolation overlap inside one
+  // row into fake "repeat coverage".  This sampler remains as a hook for
+  // stall/telemetry logic; it does not write the CoverageGrid (R3).
+  (void)0;
 }
 
 // ── Cancelling ──────────────────────────────────────────────────────────
@@ -810,6 +814,7 @@ void CoverageExecutorNode::finishTask()
   cancel_started_ = false;
   last_cancel_pose_.reset();
   last_tool_pose_.reset();
+  work_row_start_pose_.reset();
   masks_.reset();
   plan_.reset();
   core_.reset();

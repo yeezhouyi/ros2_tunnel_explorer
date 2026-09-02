@@ -156,6 +156,11 @@ CoveragePlan ScanlinePlanner::buildSweep(double axis, bool & ok) const
     rowOffsets(lo_world_y, hi_world_y, r_tool, spacing) :
     rowOffsets(lo_world_x, hi_world_x, r_tool, spacing);
 
+  // Record the sweep identity on the returned plan (used by tests and by the
+  // executor when dispatching segment types).
+  plan.direction_rad = axis;
+  plan.spacing_m = spacing;
+
   std::vector<CoverageSegment> segments;
   std::size_t work_count = 0;
   std::size_t t_index = 0;

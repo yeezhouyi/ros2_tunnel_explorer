@@ -111,17 +111,28 @@ TEST(CoverageTrackerTest, SparseAndDenseSamplingAgree)
   const Point2D a{0.2, 0.75};
   const Point2D b{1.8, 0.75};
 
-  // Dense input: many small poses.
+  // Dense input: consecutive small segments (odometry-like samples).
   constexpr int kDense = 200;
-  for (int i = 0; i < kDense; ++i) {
-    const double t = static_cast<double>(i) / static_cast<double>(kDense - 1);
-    dense.addSweepSegment(a, Point2D{a.x + t * (b.x - a.x), a.y});
+  Point2D prev = a;
+  for (int i = 1; i <= kDense; ++i) {
+    const double t = static_cast<double>(i) / static_cast<double>(kDense);
+    const Point2D cur{a.x + t * (b.x - a.x), a.y};
+    dense.addSweepSegment(prev, cur);
+    prev = cur;
   }
   // Sparse input: one long segment — the tracker interpolates internally at
-  // <= half a cell, so the swept set must match.
+  // <= half a cell, so the swept *set* must match (R3 sampling robustness).
   sparse.addSweepSegment(a, b);
 
-  EXPECT_EQ(dense.visitCounts(), sparse.visitCounts());
+  // Compare covered sets (per-cell pass counts may differ between the two
+  // feeding patterns; the covered area must not).
+  const auto & dc = dense.visitCounts();
+  const auto & sc = sparse.visitCounts();
+  ASSERT_EQ(dc.size(), sc.size());
+  for (std::size_t i = 0; i < dc.size(); ++i) {
+    EXPECT_EQ(dc[i] > 0, sc[i] > 0);
+  }
+  EXPECT_EQ(dense.uniqueCoveredCells(), sparse.uniqueCoveredCells());
   EXPECT_NEAR(dense.metrics().path_length_m, 1.6, 1e-9);
   EXPECT_NEAR(sparse.metrics().path_length_m, 1.6, 1e-9);
 }
