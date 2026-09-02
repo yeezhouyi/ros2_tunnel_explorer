@@ -25,7 +25,7 @@ target_include_directories(coverage_planning
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(coverage_planning tunnel_map_core)
+target_link_libraries(coverage_planning PUBLIC tunnel_map_core::tunnel_map_core)
 
 # ── Install targets ──────────────────────────────────────────────────────
 

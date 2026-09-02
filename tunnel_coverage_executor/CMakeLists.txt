@@ -30,7 +30,11 @@ target_include_directories(coverage_executor_core
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(coverage_executor_core tunnel_map_core tunnel_coverage_planner)
+target_link_libraries(coverage_executor_core
+  PUBLIC
+    tunnel_map_core::tunnel_map_core
+    tunnel_coverage_planner::coverage_planning
+)
 
 # ── Executable ────────────────────────────────────────────────────────────
 
