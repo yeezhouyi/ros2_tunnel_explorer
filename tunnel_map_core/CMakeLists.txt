@@ -27,6 +27,7 @@ target_include_directories(tunnel_map_core
 # ── Install targets ──────────────────────────────────────────────────────
 
 install(TARGETS tunnel_map_core
+  EXPORT tunnel_map_core
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
 )

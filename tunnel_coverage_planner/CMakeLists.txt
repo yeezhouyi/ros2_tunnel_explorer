@@ -30,6 +30,7 @@ target_link_libraries(coverage_planning tunnel_map_core)
 # ── Install targets ──────────────────────────────────────────────────────
 
 install(TARGETS coverage_planning
+  EXPORT coverage_planning
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
 )
