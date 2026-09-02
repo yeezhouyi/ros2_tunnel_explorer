@@ -119,6 +119,17 @@ public:
   ///         reachable-cleanable area is empty.
   CoveragePlan plan();
 
+  /// Build a multi-cell plan (U6): Boustrophedon-decompose the cleanable
+  /// region, plan each cell independently with the scanline generator and
+  /// chain the cells in a deterministic nearest-neighbour order computed
+  /// from cell-centroid distances (a stand-in for the Nav2 cost matrix that
+  /// the executor/integration layer can later substitute).
+  ///
+  /// Single connected regions reduce to `plan()` output.
+  ///
+  /// @param seed_world Robot start pose (map frame); chooses the entry cell.
+  CoveragePlan planMultiCell(const tunnel_map_core::Point2D & seed_world);
+
 private:
   tunnel_map_core::GridGeometry geometry_;
   CoverageMasks masks_;

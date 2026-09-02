@@ -25,6 +25,8 @@
 #include <utility>
 #include <vector>
 
+#include "tunnel_coverage_planner/boustrophedon_decomposer.hpp"
+#include "tunnel_coverage_planner/segment_orderer.hpp"
 #include "tunnel_map_core/map_digest.hpp"
 
 namespace tunnel_coverage_planner
@@ -371,6 +373,140 @@ CoveragePlan ScanlinePlanner::plan()
     chosen.plan_id = tunnel_map_core::fnv1a64Hex(serialize(chosen));
   }
   return chosen;
+}
+
+CoveragePlan ScanlinePlanner::planMultiCell(
+  const tunnel_map_core::Point2D & seed_world)
+{
+  // Single connected region: identical to the MVP plan().
+  BoustrophedonDecomposer decomposer(geometry_, masks_);
+  const auto cells = decomposer.decompose();
+  if (cells.size() <= 1) {
+    return plan();
+  }
+
+  const std::size_t w = geometry_.width();
+  const std::size_t n = w * geometry_.height();
+
+  // Entry cell: the one containing the seed pose (fallback: nearest).
+  tunnel_map_core::GridCell seed_cell;
+  int entry = 0;
+  if (geometry_.worldToGridCell(seed_world, seed_cell)) {
+    const auto sidx = geometry_.index(seed_cell.row, seed_cell.col);
+    for (std::size_t ci = 0; ci < cells.size(); ++ci) {
+      if (cells[ci].mask[sidx] != 0) {
+        entry = static_cast<int>(ci);
+        break;
+      }
+    }
+  }
+
+  // Plan each cell independently (per-cell scanline, cell-local masks).
+  struct CellPlan
+  {
+    CoveragePlan plan;
+    tunnel_map_core::Point2D centroid;
+  };
+  std::vector<CellPlan> cell_plans;
+  cell_plans.reserve(cells.size());
+  for (std::size_t ci = 0; ci < cells.size(); ++ci) {
+    CoverageMasks local;
+    local.geometry = geometry_;
+    local.intended_target.assign(n, 0);
+    local.navigable_center.assign(n, 0);
+    local.reachable_cleanable.assign(n, 0);
+    local.exempt.assign(n, 0);
+    local.exempt_cause.assign(n, 0);
+    for (std::size_t i = 0; i < n; ++i) {
+      if (cells[ci].mask[i] == 0) {
+        continue;
+      }
+      local.intended_target[i] = masks_.intended_target[i];
+      local.navigable_center[i] = masks_.navigable_center[i];
+      local.reachable_cleanable[i] = masks_.reachable_cleanable[i];
+      local.exempt[i] = masks_.exempt[i];
+      local.exempt_cause[i] = masks_.exempt_cause[i];
+    }
+    // Per-cell plans may legitimately contain short sweeps (e.g. a thin
+    // doorway merge band, ~0.3 m tall); relax the fragment filter for the
+    // per-cell generator only.
+    ScanlinePlannerConfig sub_cfg = config_;
+    sub_cfg.min_segment_length_m = std::min(
+      config_.min_segment_length_m, 0.15);
+    ScanlinePlanner sub(geometry_, local, robot_, sub_cfg);
+    CellPlan cp;
+    cp.plan = sub.plan();
+    cp.centroid = cells[ci].centroid(geometry_);
+    cell_plans.push_back(std::move(cp));
+  }
+
+  // Deterministic nearest-neighbour cell order on centroid distances
+  // (integration layer may later substitute a Nav2 cost matrix).
+  std::vector<std::vector<double>> cost(
+    cells.size(), std::vector<double>(cells.size(), 0.0));
+  for (std::size_t i = 0; i < cells.size(); ++i) {
+    for (std::size_t j = 0; j < cells.size(); ++j) {
+      const double dx = cell_plans[i].centroid.x - cell_plans[j].centroid.x;
+      const double dy = cell_plans[i].centroid.y - cell_plans[j].centroid.y;
+      cost[i][j] = std::sqrt(dx * dx + dy * dy);
+    }
+  }
+  const auto cell_order = SegmentOrderer::order(cost, entry);
+
+  // Chain the per-cell plans into one ordered plan.
+  CoveragePlan out;
+  out.direction_rad = 0.0;  // row-sweep decomposition axis
+  std::vector<CoverageSegment> segments;
+  bool have_last = false;
+  double last_x = 0.0;
+  double last_y = 0.0;
+  std::size_t t_index = 0;
+  std::size_t work_count = 0;
+
+  auto appendSeg = [&](const CoverageSegment & s) {
+      const double d = have_last ?
+        std::sqrt((last_x - s.start_x) * (last_x - s.start_x) +
+          (last_y - s.start_y) * (last_y - s.start_y)) : 0.0;
+      if (have_last && d > 1e-6) {
+        CoverageSegment t;
+        t.id = "cell-t" + std::to_string(t_index++);
+        t.cell_id = s.cell_id;
+        t.type = SegmentType::TRANSITION;
+        t.start_x = last_x;
+        t.start_y = last_y;
+        t.end_x = s.start_x;
+        t.end_y = s.start_y;
+        segments.push_back(t);
+      }
+      segments.push_back(s);
+      last_x = s.end_x;
+      last_y = s.end_y;
+      have_last = true;
+      if (s.type == SegmentType::WORK) {
+        ++work_count;
+      }
+    };
+
+  for (const int ci : cell_order) {
+    const auto & cell_plan = cell_plans[static_cast<std::size_t>(ci)];
+    if (cell_plan.plan.segments.empty()) {
+      continue;  // degenerate cell (no viable rows); covered by neighbours
+    }
+    for (auto s : cell_plan.plan.segments) {
+      s.id = cells[static_cast<std::size_t>(ci)].id + "-" + s.id;
+      s.cell_id = cells[static_cast<std::size_t>(ci)].id;
+      appendSeg(s);
+    }
+  }
+
+  if (segments.empty()) {
+    return CoveragePlan{};  // invalid: nothing plannable
+  }
+  out.segments = std::move(segments);
+  out.work_count = work_count;
+  out.spacing_m = cell_plans[static_cast<std::size_t>(cell_order[0])].plan.spacing_m;
+  out.plan_id = tunnel_map_core::fnv1a64Hex(serialize(out));
+  return out;
 }
 
 }  // namespace tunnel_coverage_planner

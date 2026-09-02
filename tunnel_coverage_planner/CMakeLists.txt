@@ -17,6 +17,8 @@ add_library(coverage_planning STATIC
   src/cleanable_map_builder.cpp
   src/coverage_tracker.cpp
   src/scanline_planner.cpp
+  src/boustrophedon_decomposer.cpp
+  src/segment_orderer.cpp
 )
 
 target_include_directories(coverage_planning
@@ -82,6 +84,30 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_scanline_planner coverage_planning)
   target_include_directories(test_scanline_planner PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_boustrophedon_decomposer
+    test/test_boustrophedon_decomposer.cpp
+  )
+  target_link_libraries(test_boustrophedon_decomposer coverage_planning)
+  target_include_directories(test_boustrophedon_decomposer PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_segment_orderer
+    test/test_segment_orderer.cpp
+  )
+  target_link_libraries(test_segment_orderer coverage_planning)
+  target_include_directories(test_segment_orderer PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_multicell_planner
+    test/test_multicell_planner.cpp
+  )
+  target_link_libraries(test_multicell_planner coverage_planning)
+  target_include_directories(test_multicell_planner PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 endif()

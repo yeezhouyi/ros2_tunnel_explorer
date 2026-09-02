@@ -233,29 +233,29 @@ void CoverageExecutorNode::tickTimerCallback()
       case PHASE_TRANSITING:
       case PHASE_EXECUTING_SEGMENT: {
         // Watchdog: a single Nav2 child goal must not run forever.
-        if (child_sent_) {
-          const double run = (now() - child_send_time_).seconds();
-          if (run > child_goal_timeout_s_ + cancel_grace_s_) {
-            RCLCPP_WARN(get_logger(),
+          if (child_sent_) {
+            const double run = (now() - child_send_time_).seconds();
+            if (run > child_goal_timeout_s_ + cancel_grace_s_) {
+              RCLCPP_WARN(get_logger(),
               "Child goal stuck after %.1f s — forcing failure", run);
-            pending_outcome_ = ChildOutcome{exec_index_, false};
-            child_sent_ = false;
-            nav_gh_.reset();
-            follow_gh_.reset();
-          } else if (run > child_goal_timeout_s_) {
-            RCLCPP_WARN(get_logger(),
+              pending_outcome_ = ChildOutcome{exec_index_, false};
+              child_sent_ = false;
+              nav_gh_.reset();
+              follow_gh_.reset();
+            } else if (run > child_goal_timeout_s_) {
+              RCLCPP_WARN(get_logger(),
               "Child goal timeout after %.1f s — cancelling", run);
-            if (nav_gh_) {
-              nav_client_->async_cancel_goal(nav_gh_);
-            }
-            if (follow_gh_) {
-              follow_client_->async_cancel_goal(follow_gh_);
+              if (nav_gh_) {
+                nav_client_->async_cancel_goal(nav_gh_);
+              }
+              if (follow_gh_) {
+                follow_client_->async_cancel_goal(follow_gh_);
+              }
             }
           }
+          tickExecution();
+          break;
         }
-        tickExecution();
-        break;
-      }
       case PHASE_CANCELLING:
         tickCancelling();
         break;
@@ -355,7 +355,9 @@ void CoverageExecutorNode::beginTask(
 
     tunnel_coverage_planner::ScanlinePlanner planner(
       geo, *masks_, robot_geo_, planner_cfg_);
-    auto p = planner.plan();
+    // Multi-cell planning (U6): decomposes pillar/L/doorway regions and
+    // chains the cells; single connected regions behave exactly like plan().
+    auto p = planner.planMultiCell(seed);
     if (!p.valid()) {
       failure_class_ = "EMPTY_PLAN";
       terminal_result_ = RESULT_PARTIAL_FAILED;
