@@ -125,16 +125,16 @@ CheckpointLoadStatus CheckpointStore::loadAndValidate(
 
   std::string line;
   auto readInt = [&](int64_t & v) -> bool {
-    if (!std::getline(is, line) || line.empty()) {
-      return false;
-    }
-    try {
-      v = std::stoll(line);
-    } catch (const std::exception &) {
-      return false;
-    }
-    return true;
-  };
+      if (!std::getline(is, line) || line.empty()) {
+        return false;
+      }
+      try {
+        v = std::stoll(line);
+      } catch (const std::exception &) {
+        return false;
+      }
+      return true;
+    };
   int64_t resume = 0;
   double path_len = 0.0;
   double duration = 0.0;

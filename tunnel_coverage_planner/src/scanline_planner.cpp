@@ -163,25 +163,25 @@ CoveragePlan ScanlinePlanner::buildSweep(double axis, bool & ok) const
   double last_x = 0.0, last_y = 0.0;
 
   auto emit = [&](CoverageSegment s) {
-    if (have_last) {
-      CoverageSegment t;
-      t.id = "room0-t" + std::to_string(t_index++);
-      t.cell_id = "room0";
-      t.type = SegmentType::TRANSITION;
-      t.start_x = last_x;
-      t.start_y = last_y;
-      t.end_x = s.start_x;
-      t.end_y = s.start_y;
-      segments.push_back(t);
-    }
-    segments.push_back(s);
-    last_x = s.end_x;
-    last_y = s.end_y;
-    have_last = true;
-    if (s.type == SegmentType::WORK) {
-      ++work_count;
-    }
-  };
+      if (have_last) {
+        CoverageSegment t;
+        t.id = "room0-t" + std::to_string(t_index++);
+        t.cell_id = "room0";
+        t.type = SegmentType::TRANSITION;
+        t.start_x = last_x;
+        t.start_y = last_y;
+        t.end_x = s.start_x;
+        t.end_y = s.start_y;
+        segments.push_back(t);
+      }
+      segments.push_back(s);
+      last_x = s.end_x;
+      last_y = s.end_y;
+      have_last = true;
+      if (s.type == SegmentType::WORK) {
+        ++work_count;
+      }
+    };
 
   for (std::size_t k = 0; k < offsets.size(); ++k) {
     const double line = offsets[k];
@@ -330,12 +330,12 @@ CoveragePlan ScanlinePlanner::plan()
     // MVP selection criterion: total path length (work + transition).
     // Direction-choice ablation (turn/segment weights) is tracked in the
     // config for the U6+ extension of J(theta).
-    double c = 0.0;
-    for (const auto & s : p.segments) {
-      c += s.lengthM();
-    }
-    return c;
-  };
+      double c = 0.0;
+      for (const auto & s : p.segments) {
+        c += s.lengthM();
+      }
+      return c;
+    };
 
   CoveragePlan chosen;
   bool have_chosen = false;

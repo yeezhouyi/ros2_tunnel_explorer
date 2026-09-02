@@ -170,7 +170,7 @@ TEST(ScanlinePlannerTest, SegmentEndpointsLieInNavigableSpace)
       continue;
     }
     for (const auto & pt : {Point2D{s.start_x, s.start_y},
-      Point2D{s.end_x, s.end_y}})
+        Point2D{s.end_x, s.end_y}})
     {
       tunnel_map_core::GridCell cell;
       ASSERT_TRUE(geo.worldToGridCell(pt, cell));
@@ -263,26 +263,26 @@ TEST(ScanlinePlannerTest, InvalidConfigRejected)
   const auto masks = buildMasks(map, Point2D{0.5, 1.0});
 
   auto expect_invalid = [](auto && fn) -> bool {
-    try {
-      fn();
-      return false;
-    } catch (const std::invalid_argument &) {
-      return true;
-    } catch (...) {
-      return false;
-    }
-  };
+      try {
+        fn();
+        return false;
+      } catch (const std::invalid_argument &) {
+        return true;
+      } catch (...) {
+        return false;
+      }
+    };
 
   ScanlinePlannerConfig cfg;
   cfg.overlap_eta = 1.5;
   RobotCleaningGeometry robot;
   EXPECT_TRUE(expect_invalid([&]() {
-    ScanlinePlanner p(geo, masks, robot, cfg); (void)p;
+      ScanlinePlanner p(geo, masks, robot, cfg); (void)p;
   }));
   cfg.overlap_eta = 0.1;
   cfg.endpoint_inset_m = -1.0;
   EXPECT_TRUE(expect_invalid([&]() {
-    ScanlinePlanner p(geo, masks, robot, cfg); (void)p;
+      ScanlinePlanner p(geo, masks, robot, cfg); (void)p;
   }));
 }
 

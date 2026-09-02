@@ -116,12 +116,12 @@ TEST(CleanableMapBuilderTest, ThrowsOnSeedOutsideNavigable)
 
   // Seed on an occupied cell.
   EXPECT_TRUE(throwsInvalidArgument([&]() {
-    builder.build(map, robot, seedAt(0.75, 0.75));
+      builder.build(map, robot, seedAt(0.75, 0.75));
   }));
 
   // Seed outside the map.
   EXPECT_TRUE(throwsInvalidArgument([&]() {
-    builder.build(map, robot, seedAt(100.0, 100.0));
+      builder.build(map, robot, seedAt(100.0, 100.0));
   }));
 }
 
@@ -231,7 +231,7 @@ TEST(CleanableMapBuilderTest, NarrowCorridorExcluded)
 
   // Seed inside the 0.3 m gap -> not navigable -> rejected.
   EXPECT_TRUE(throwsInvalidArgument([&]() {
-    builder.build(map, robot, seedAt(0.5, 0.5));
+      builder.build(map, robot, seedAt(0.5, 0.5));
   }));
 }
 

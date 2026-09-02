@@ -355,8 +355,8 @@ CoverageMasks CleanableMapBuilder::build(
       }
       out.exempt[i] = 1;
       out.exempt_cause[i] =
-        island_of[i] != 0 ? static_cast<std::uint8_t>(ExemptCause::ISLAND)
-                          : static_cast<std::uint8_t>(ExemptCause::UNREACHABLE);
+        island_of[i] != 0 ? static_cast<std::uint8_t>(ExemptCause::ISLAND) :
+        static_cast<std::uint8_t>(ExemptCause::UNREACHABLE);
     }
   }
 

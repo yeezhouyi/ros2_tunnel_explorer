@@ -121,7 +121,7 @@ std::int32_t CoverageTaskCore::terminalResult() const
 {
   if (countFailed() == 0 && countPending() == 0 && countBlockedTemp() == 0) {
     return countExempt() > 0 ?
-      RESULT_SUCCEEDED_WITH_EXEMPTIONS : RESULT_SUCCEEDED_FULL;
+           RESULT_SUCCEEDED_WITH_EXEMPTIONS : RESULT_SUCCEEDED_FULL;
   }
   return RESULT_PARTIAL_FAILED;
 }

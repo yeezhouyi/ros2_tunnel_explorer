@@ -128,7 +128,8 @@ private:
   double spacingM() const;
 
   /// Strip offsets (row positions) that tile [lo, hi] with tool reach r_tool.
-  static std::vector<double> rowOffsets(double lo, double hi, double r_tool,
+  static std::vector<double> rowOffsets(
+    double lo, double hi, double r_tool,
     double spacing);
 
   /// Build ordered segments for a sweep along @p axis_angle (0 or pi/2).

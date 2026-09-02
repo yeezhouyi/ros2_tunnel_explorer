@@ -110,7 +110,7 @@ CoverageExecutorNode::CoverageExecutorNode()
   cov_server_ = rclcpp_action::create_server<CovAction>(
     this, "execute_coverage",
     [this](const rclcpp_action::GoalUUID &,
-      std::shared_ptr<const CovAction::Goal>)
+    std::shared_ptr<const CovAction::Goal>)
     {
       if (task_active_) {
         RCLCPP_WARN(get_logger(), "ExecuteCoverage rejected — task active");
@@ -442,7 +442,7 @@ void CoverageExecutorNode::sendNextSegment()
   tunnel_map_core::Point2D pose;
   if (!getRobotPose(pose) ||
     dist2d(pose.x, pose.y, seg.start_x, seg.start_y) >
-      std::max(endpoint_tolerance_m_, 0.05))
+    std::max(endpoint_tolerance_m_, 0.05))
   {
     // Approach the work-line start using NavigateToPose (orientation =
     // line direction).
@@ -514,7 +514,7 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
     tunnel_map_core::Point2D pose;
     ok = getRobotPose(pose) &&
       dist2d(pose.x, pose.y, seg.end_x, seg.end_y) <=
-        std::max(endpoint_tolerance_m_, 0.10);
+      std::max(endpoint_tolerance_m_, 0.10);
     if (!ok) {
       RCLCPP_WARN(get_logger(),
         "Work segment %s reported success but endpoint not reached",
@@ -569,7 +569,7 @@ void CoverageExecutorNode::sendNavigate(
     [this](const NavClient::GoalHandle::SharedPtr & gh) {nav_gh_ = gh;};
   send_opts.result_callback =
     [this, idx = exec_index_](
-      const NavClient::GoalHandle::WrappedResult & r)
+    const NavClient::GoalHandle::WrappedResult & r)
     {
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
       if (!ok && phase_ != PHASE_CANCELLING) {
@@ -623,7 +623,7 @@ void CoverageExecutorNode::sendFollow(
     {follow_gh_ = gh;};
   send_opts.result_callback =
     [this, idx = exec_index_](
-      const FollowClient::GoalHandle::WrappedResult & r)
+    const FollowClient::GoalHandle::WrappedResult & r)
     {
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
       if (!ok && phase_ != PHASE_CANCELLING) {
@@ -705,7 +705,7 @@ void CoverageExecutorNode::tickCancelling()
   const bool have_pose = getRobotPose(pose);
   const bool moving = have_pose && last_cancel_pose_ &&
     dist2d(pose.x, pose.y, last_cancel_pose_->x, last_cancel_pose_->y) >
-      stop_velocity_threshold_ * 0.2;
+    stop_velocity_threshold_ * 0.2;
   last_cancel_pose_ =
     have_pose ? std::optional<tunnel_map_core::Point2D>(pose) : std::nullopt;
 
