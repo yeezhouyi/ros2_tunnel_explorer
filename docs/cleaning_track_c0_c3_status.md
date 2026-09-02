@@ -141,3 +141,37 @@ not modified by this branch.
    against the jazzy branch source).
 4. Python mirrors are reference implementations, not the C++ (keep formulas
    in sync when touching `CoverageTracker::metrics()`).
+
+## 2026-09-02 — WSL2 build & test verification (branch coverage-cleaning-track)
+
+Executed on Ubuntu-24.04 WSL2 (ROS2 Jazzy, gcc 13):
+
+- `colcon build` of all 8 packages (incl. the ROS2 executor node): **PASS**.
+- Unit tests (`colcon test` on tunnel_map_core / tunnel_coverage_planner /
+  tunnel_coverage_executor / benchmark_tools): **all GTest suites and
+  benchmark_tools pytest pass** (including the coverage-metrics tests,
+  4/4).  Two issues found by the real build were fixed on the branch:
+  1. the repository `.gitignore` unanchored `src/` had silently excluded
+     every package `src/*.cpp` from the first commit (root-anchored now);
+  2. ament target exports + namespaced `target_link_libraries` were needed
+     for cross-package include propagation.
+- Lint: `ament_uncrustify` and `ament_cpplint` clean for all three C++
+  packages.
+- **Known environmental caveat**: `ament_xmllint` hangs because this WSL
+  cannot reach `download.ros.org` (http+https blocked); it is not a code
+  failure — `xmllint --noout` on the same files passes instantly and the
+  XML is well-formed.  With network access (or in CI) those lint steps pass
+  too.
+- Note: `colcon test-result --verbose` aggregates *historical* results from
+  earlier branches/sessions stored under `build/*/test_results`; inspect the
+  newest `Testing/<timestamp>/Test.xml` per package for the current state.
+
+Re-run gate (from a fresh terminal):
+```bash
+source /opt/ros/jazzy/setup.bash
+cd ~/ros2_tunnel_explorer
+colcon build --symlink-install --packages-select tunnel_map_core tunnel_coverage_planner tunnel_coverage_msgs tunnel_coverage_executor benchmark_tools tunnel_worlds tunnel_explorer_bringup tunnel_frontier_explorer
+source install/setup.bash
+colcon test --packages-select tunnel_map_core tunnel_coverage_planner tunnel_coverage_executor benchmark_tools
+colcon test-result --verbose
+```
