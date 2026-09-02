@@ -81,7 +81,19 @@ controller_server:
       yaw_goal_tolerance: 6.28
 
     FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "dwb_core::DWBLocalPlanner"
+      angular_dist_threshold: 0.45
+      angular_disengage_threshold: 0.20
+      forward_sampling_distance: 0.5
+      rotate_to_heading_angular_vel: 0.8
+      max_angular_accel: 1.5
+      max_cost_threshold: 254.0
+      simulate_ahead_time: 1.0
+      rotate_to_goal_heading: false
+      rotate_to_heading_once: false
+      closed_loop: true
+      use_path_orientations: false
       debug_trajectory_details: true
       min_vel_x: 0.0
       max_vel_x: 0.26
@@ -118,7 +130,6 @@ controller_server:
       PathDist.plugin: "dwb_critics::PathDist"
       PreferForward.plugin: "dwb_critics::PreferForward"
       Oscillation.plugin: "dwb_critics::Oscillation"
-
 local_costmap:
   local_costmap:
     ros__parameters:
