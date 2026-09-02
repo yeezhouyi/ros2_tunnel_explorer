@@ -71,8 +71,8 @@ std::size_t CoverageTracker::stampDisc(const tunnel_map_core::Point2D & centre)
 
   for (int dr = -k; dr <= k; ++dr) {
     for (int dc = -k; dc <= k; ++dc) {
-      const auto row = static_cast<long long>(centre_cell.row) + dr;
-      const auto col = static_cast<long long>(centre_cell.col) + dc;
+      const auto row = static_cast<std::int64_t>(centre_cell.row) + dr;
+      const auto col = static_cast<std::int64_t>(centre_cell.col) + dc;
       if (row < 0 || col < 0 ||
         static_cast<std::size_t>(row) >= h ||
         static_cast<std::size_t>(col) >= w)

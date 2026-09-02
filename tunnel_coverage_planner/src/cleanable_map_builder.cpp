@@ -111,8 +111,8 @@ std::vector<std::uint8_t> CleanableMapBuilder::erodeByDisc(
           if (d2 > r2) {
             continue;
           }
-          const auto rr = static_cast<long long>(row) + dr;
-          const auto cc = static_cast<long long>(col) + dc;
+          const auto rr = static_cast<std::int64_t>(row) + dr;
+          const auto cc = static_cast<std::int64_t>(col) + dc;
           if (rr < 0 || cc < 0 ||
             static_cast<std::size_t>(rr) >= h ||
             static_cast<std::size_t>(cc) >= w)
@@ -164,8 +164,8 @@ std::vector<std::uint8_t> CleanableMapBuilder::dilateByDisc(
           if (d2 > r2) {
             continue;
           }
-          const auto rr = static_cast<long long>(row) + dr;
-          const auto cc = static_cast<long long>(col) + dc;
+          const auto rr = static_cast<std::int64_t>(row) + dr;
+          const auto cc = static_cast<std::int64_t>(col) + dc;
           if (rr < 0 || cc < 0 ||
             static_cast<std::size_t>(rr) >= h ||
             static_cast<std::size_t>(cc) >= w)
@@ -200,8 +200,8 @@ std::vector<std::uint8_t> CleanableMapBuilder::connectedComponentFrom(
   while (!queue.empty()) {
     const auto idx = queue.front();
     queue.pop_front();
-    const auto row = static_cast<long long>(idx / w);
-    const auto col = static_cast<long long>(idx % w);
+    const auto row = static_cast<std::int64_t>(idx / w);
+    const auto col = static_cast<std::int64_t>(idx % w);
     for (const auto & d : offsets) {
       const auto rr = row + d.first;
       const auto cc = col + d.second;
@@ -311,8 +311,8 @@ CoverageMasks CleanableMapBuilder::build(
         const auto idx = queue.front();
         queue.pop_front();
         comp.push_back(idx);
-        const auto row = static_cast<long long>(idx / geometry_.width());
-        const auto col = static_cast<long long>(idx % geometry_.width());
+        const auto row = static_cast<std::int64_t>(idx / geometry_.width());
+        const auto col = static_cast<std::int64_t>(idx % geometry_.width());
         for (const auto & d : offsets) {
           const auto rr = row + d.first;
           const auto cc = col + d.second;

@@ -15,19 +15,20 @@
 #ifndef TUNNEL_COVERAGE_EXECUTOR__COVERAGE_EXECUTOR_NODE_HPP_
 #define TUNNEL_COVERAGE_EXECUTOR__COVERAGE_EXECUTOR_NODE_HPP_
 
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav2_msgs/action/follow_path.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
 
 #include "tunnel_coverage_executor/checkpoint_store.hpp"
 #include "tunnel_coverage_executor/coverage_task_core.hpp"
