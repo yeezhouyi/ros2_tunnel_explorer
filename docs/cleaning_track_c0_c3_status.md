@@ -175,3 +175,30 @@ source install/setup.bash
 colcon test --packages-select tunnel_map_core tunnel_coverage_planner tunnel_coverage_executor benchmark_tools
 colcon test-result --verbose
 ```
+
+## 2026-09-02 — Runtime (simulation) findings in WSL2 — OPEN ITEMS
+
+Headless end-to-end runs on this machine:
+
+- Stack bring-up works: map_server + AMCL + Nav2 reach READY_IDLE ~10 s after
+  `coverage_simulation.launch.py` (map frozen, localisation valid, action
+  servers ready).  Executor needs `use_sim_time: true` and AMCL needs the
+  deterministic `/initialpose` publisher added to the launch.
+- A coverage goal is accepted and the executor drives through the planned
+  segments (state machine + Nav2 child goals + watchdog all behave).
+- **Open issue (next optimisation round)**: navigation goals can degenerate
+  into tight circling.  Telemetry showed DWB commanding saturated
+  v=0.26 + w=1.0 (end-orientation tracking failure — the same family as the
+  repo's Stage 0B-D finding).  Switching the coverage params to the repo's
+  proven RotationShim+DWB controller block
+  (`nav2_params_coverage_dwb.yaml` now carries it) improved things but some
+  segments still circle; controller tuning / plan-direction strategy is
+  deferred.  This is runtime parameter work, not a code defect: build and
+  all unit/lint gates are green.
+- AMCL/Jazzy quirk recorded: `robot_model_type` must be the plugin class
+  name `nav2_amcl::DifferentialMotionModel`.
+- `ament_xmllint` cannot run in this WSL (no route to download.ros.org);
+  XML is valid (`xmllint --noout` passes).  Environmental.
+
+Next round (optimise): tune RotationShim rotate gains / DWB critics, or
+evaluate row-order strategy, then run the formal 5-run rect gate.
