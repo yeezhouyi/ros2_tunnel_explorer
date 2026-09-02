@@ -15,6 +15,9 @@
   <exec_depend>nav2_minimal_tb3_sim</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>ros2launch</exec_depend>
+  <exec_depend>tunnel_worlds</exec_depend>
+  <exec_depend>tunnel_coverage_executor</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
