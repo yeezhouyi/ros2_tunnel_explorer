@@ -38,6 +38,12 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
+# ── Export for downstream packages (executor) ────────────────────────────
+
+ament_export_include_directories(include)
+ament_export_dependencies(tunnel_map_core)
+ament_export_targets(coverage_planning HAS_LIBRARY_TARGET)
+
 # ── Testing ───────────────────────────────────────────────────────────────
 
 if(BUILD_TESTING)
