@@ -19,6 +19,7 @@ add_library(coverage_planning STATIC
   src/scanline_planner.cpp
   src/boustrophedon_decomposer.cpp
   src/segment_orderer.cpp
+  src/residual_planner.cpp
 )
 
 target_include_directories(coverage_planning
@@ -108,6 +109,14 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_multicell_planner coverage_planning)
   target_include_directories(test_multicell_planner PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_residual_planner
+    test/test_residual_planner.cpp
+  )
+  target_link_libraries(test_residual_planner coverage_planning)
+  target_include_directories(test_residual_planner PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 endif()
