@@ -32,8 +32,10 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     IncludeLaunchDescription,
     SetEnvironmentVariable,
+    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -155,8 +157,34 @@ def generate_launch_description():
         os.path.join(pkg_bringup, 'config', 'fastdds_udp_only.xml'),
     )
 
+    # AMCL needs an initial pose estimate (headless automation has no RViz
+    # "2D Pose Estimate"); publish the deterministic spawn pose once the
+    # stack has had a moment to start.
+    initial_pose_pub = TimerAction(
+        period=12.0,
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    'ros2', 'topic', 'pub', '--once', '/initialpose',
+                    'geometry_msgs/msg/PoseWithCovarianceStamped',
+                    '{header: {frame_id: map}, '
+                    'pose: {pose: {position: {x: ' + dx + ', y: ' + dy + '}, '
+                    'orientation: {w: 1.0}}, '
+                    'covariance: [0.25, 0, 0, 0, 0, 0, '
+                    '0, 0.25, 0, 0, 0, 0, '
+                    '0, 0, 0, 0, 0, 0, '
+                    '0, 0, 0, 0.25, 0, 0, '
+                    '0, 0, 0, 0, 0.25, 0, '
+                    '0, 0, 0, 0, 0, 0.25]}}',
+                ],
+                output='log',
+            ),
+        ],
+    )
+
     return LaunchDescription([
         fastdds_env,
+        initial_pose_pub,
         rviz_arg,
         headless_arg,
         use_composition_arg,
