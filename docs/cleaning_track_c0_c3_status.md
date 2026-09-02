@@ -202,3 +202,26 @@ Headless end-to-end runs on this machine:
 
 Next round (optimise): tune RotationShim rotate gains / DWB critics, or
 evaluate row-order strategy, then run the formal 5-run rect gate.
+
+## 2026-09-02 — U6 / C5 delivered (Boustrophedon decomposition + ordering)
+
+Branch coverage-cleaning-track @ 1ee58b2 adds the C5 milestone:
+
+- `BoustrophedonDecomposer` (pure C++): row-sweep split/merge critical-event
+  decomposition of the reachable region into CoverageCells with per-cell
+  masks, bounding boxes and a neighbour graph.  Pillar room -> 4 cells
+  (top/left/right/bottom); doorway rooms -> multiple cells; plain room -> 1.
+- `SegmentOrderer` (pure C++): deterministic nearest-neighbour ordering over
+  a caller-supplied cost matrix (asymmetric allowed, index tie-break).  The
+  executor/integration layer may later substitute Nav2 ComputePathToPose
+  costs; the planner core never calls ROS.
+- `ScanlinePlanner::planMultiCell(seed)`: decomposes, plans each cell with
+  the scanline generator (fragment filter relaxed to 0.15 m for thin merge
+  bands) and chains cells; single-region maps produce byte-identical output
+  to `plan()`.  The executor now plans multi-cell, so pillar / L / doorway
+  rooms are executable once the worlds exist (U10).
+
+Verified in WSL2: decomposer 3/3, orderer 4/4, multicell integration 4/4
+(doorway both rooms >= 85 % simulated effective coverage, pillar & L rooms
+covered, no obstacle crossing, deterministic plan ids), full planner GTest
+suite + lint green.  Total C0-C5 GTest count: 53 tests passing.
