@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tunnel_coverage_planner</name>
+  <version>0.1.0</version>
+  <description>Full-coverage cleaning planner core for ros2_tunnel_explorer: cleanable-map masks, coverage tracking, scanline coverage planning (U2-U4). Pure C++, no ROS dependencies.</description>
+  <maintainer email="1529198419@qq.com">zhouyi</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>tunnel_map_core</build_depend>
+  <exec_depend>tunnel_map_core</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

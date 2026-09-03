@@ -1,0 +1,37 @@
+# Coverage executor parameters (U5).  Overlayed by the coverage launch via
+# --ros-args --params-file.
+tunnel_coverage_executor:
+  ros__parameters:
+    map_topic: "/map"
+    navigate_to_pose_action: "/navigate_to_pose"
+    follow_path_action: "/follow_path"
+    global_frame: "map"
+    base_frame: "base_footprint"
+
+    # Readiness / safety gates
+    max_tf_age_s: 1.0
+    endpoint_tolerance_m: 0.15
+    stop_velocity_threshold_mps: 0.05
+    stop_confirm_timeout_s: 8.0
+    min_effective_coverage: 0.97
+    max_attempts_per_segment: 2
+    checkpoint_dir: "/home/zhouyi/tunnel_coverage_checkpoints"
+
+    # Robot + cleaning geometry (TurtleBot3, centred virtual brush)
+    robot_radius_m: 0.13
+    safety_margin_m: 0.05
+    cleaning_width_m: 0.50
+    min_cleanable_region_area_m2: 0.04
+
+    # Planner configuration
+    planner:
+      overlap_eta: 0.10
+      loc_err_p95_m: 0.06
+      track_err_p95_m: 0.05
+      min_segment_length_m: 0.40
+      endpoint_inset_m: 0.05
+
+    # Cleanable-map builder
+    builder:
+      free_max: 0
+      occupied_min: 65

@@ -1,0 +1,49 @@
+# ExecuteCoverage.action
+#
+# One coverage task: the executor freezes the static map, builds the masks,
+# plans the boustrophedon route and executes the ordered segments through
+# Nav2.  See docs/cleaning_track_c4_executor.md for the task state machine.
+
+# ── Goal ──────────────────────────────────────────────────────────────────
+# Path of an optional checkpoint file to resume from.  Empty means a fresh
+# task; a non-empty path is only accepted when task_input_id and plan_id of
+# the checkpoint match the ones derived from the current map (R12, R22).
+string resume_checkpoint_path
+
+---
+# ── Result ────────────────────────────────────────────────────────────────
+# Terminal result enum (see CoverageStatus.msg phase constants):
+#   0 SUCCEEDED_FULL
+#   1 SUCCEEDED_WITH_EXEMPTIONS
+#   2 PARTIAL_FAILED
+#   3 CANCELLED
+#   4 MAP_CHANGED
+#   5 STOP_FAILED
+int32 terminal_result
+float64 gross_coverage
+float64 effective_coverage
+float64 exempt_ratio
+float64 repeat_ratio
+float64 path_length_m
+float64 duration_s
+int32 segments_total
+int32 segments_covered
+int32 segments_exempt
+int32 segments_failed
+int32 segments_pending
+# Structured failure class ("" when none): e.g. TRANSITION_FAILED,
+# WORK_TRACKING_FAILED, BLOCKED_TEMP_EXHAUSTED, LOCALIZATION_FAILED,
+# CONTROLLER_NO_OUTPUT, NAV2_REJECTED, NO_PROGRESS, STOP_CONFIRMATION_TIMEOUT.
+string failure_class
+string task_input_id
+string plan_id
+
+---
+# ── Feedback ──────────────────────────────────────────────────────────────
+# TaskPhase during execution (constants in CoverageStatus.msg):
+#   0 BOOTSTRAP  1 WAIT_MAP  2 WAIT_LOCALIZATION  3 WAIT_NAV2  4 READY_IDLE
+#   5 PLANNING   6 TRANSITING  7 EXECUTING_SEGMENT  8 RECOVERY  9 REPLANNING
+#   10 RESIDUAL_CHECK  11 CANCELLING  12 TERMINAL
+int32 phase
+float64 effective_coverage
+int32 segments_pending

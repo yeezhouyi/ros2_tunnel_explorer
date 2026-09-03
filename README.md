@@ -1,4 +1,4 @@
-# ros2_tunnel_explorer
+﻿# ros2_tunnel_explorer
 
 面向隧道巡检场景的 ROS2 自主探索与风险感知路径规划系统。
 
@@ -478,6 +478,35 @@ This project targets ROS2 Jazzy. Notable differences from Humble-era examples:
 - **bt_navigator**: Requires explicit `navigators` plugin declarations.
 
 See [docs/jazzy_compatibility.md](docs/jazzy_compatibility.md) for full details.
+
+
+Apache-2.0
+
+## Cleaning Track (full-coverage planning) — in development
+
+An independent full-coverage (sweeping) mission chain on top of the frozen
+exploration baseline (`stage3d-entrance-loop-recovery`), developed on branch
+`coverage-cleaning-track`.  It adds static-map coverage planning and
+execution: cleanable-region masks, real-trajectory coverage tracking,
+scanline boustrophedon planning, a readiness-gated `ExecuteCoverage` action
+server and checkpoint/resume — without changing the exploration launch path.
+
+| Package | Purpose |
+|---|---|
+| `tunnel_map_core` | shared grid geometry + map content digest (pure C++) |
+| `tunnel_coverage_planner` | masks, tracker, scanline planner (pure C++) |
+| `tunnel_coverage_msgs` | ExecuteCoverage action + status messages |
+| `tunnel_coverage_executor` | readiness gates, Nav2 child goals, checkpoints |
+| `tunnel_worlds` | cleaning benchmark worlds + static maps |
+| `benchmark_tools` | coverage metrics module + goal client |
+
+Quick start (see [docs/cleaning_track_c0_c3_status.md](docs/cleaning_track_c0_c3_status.md)):
+
+```bash
+ros2 launch tunnel_explorer_bringup coverage_simulation.launch.py \
+  headless:=True rviz:=False            # rect world, static map + AMCL
+ros2 run benchmark_tools send_coverage_goal.py --output-dir /tmp/cov_run_01
+```
 
 ## License
 

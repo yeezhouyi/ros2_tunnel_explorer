@@ -4,7 +4,7 @@ project(tunnel_worlds)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY worlds
+  DIRECTORY worlds maps
   DESTINATION share/${PROJECT_NAME}
 )
 

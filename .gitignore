@@ -26,10 +26,13 @@ Thumbs.db
 benchmark_tools/bags/*.db3
 benchmark_tools/bags/*.yaml
 
-# Benchmark artifacts (rosbags large, keep untracked)
-artifacts/
-src/
-CMakeFiles/
+# Benchmark artifacts (rosbags large, keep untracked).
+# Root-anchored: these stray directories may exist at the repository root
+# from accidental colcon symlink-install runs, but package src/ trees under
+# tunnel_* packages must always be tracked.
+/artifacts/
+/src/
+/CMakeFiles/
 
 # Generated reports (track scripts, not output)
 benchmark_tools/reports/*
