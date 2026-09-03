@@ -553,9 +553,14 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
     // Work completes only when the robot actually reached the segment end
     // (R20, geometric gate; real-sweep gate is the global coverage check).
     tunnel_map_core::Point2D pose;
-    ok = getRobotPose(pose) &&
-      dist2d(pose.x, pose.y, seg.end_x, seg.end_y) <=
+    // NavigateToPose (mode 4) stops within the Nav2 goal tolerance (~0.35 m),
+    // so use a matching endpoint gate there; FollowPath rows keep the tight
+    // gate.  The CoverageGrid is always updated from the real swept pass.
+    const double allowed = (mode == 4) ?
+      std::max(endpoint_tolerance_m_, 0.40) :
       std::max(endpoint_tolerance_m_, 0.10);
+    ok = getRobotPose(pose) &&
+      dist2d(pose.x, pose.y, seg.end_x, seg.end_y) <= allowed;
     if (!ok) {
       RCLCPP_WARN(get_logger(),
         "Work segment %s reported success but endpoint not reached",

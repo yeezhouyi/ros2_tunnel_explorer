@@ -74,8 +74,8 @@ class CoverageGoalClient(Node):
         rclpy.spin_until_future_complete(self, result_future, timeout_sec=limit)
         if not result_future.done():
             self.get_logger().warn(
-                'Session time limit reached after %.0f s — cancelling '
-                'gracefully so the executor saves a checkpoint', limit)
+                'Session time limit reached after %s — cancelling '
+                'gracefully so the executor saves a checkpoint' % limit)
             cancel_future = gh.cancel_goal()
             rclpy.spin_until_future_complete(self, cancel_future, timeout_sec=20.0)
             rclpy.spin_until_future_complete(self, result_future, timeout_sec=30.0)
