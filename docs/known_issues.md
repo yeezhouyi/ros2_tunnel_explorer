@@ -113,3 +113,26 @@ validity.
   return the `CANCELED` terminal state after accepting a cancel while
   finishing the current segment. Needs a C++ fix + unit test before the
   relay can rely on clean cancel results.
+
+---
+
+## Relay run 2 (2026-09-04 02:23): no checkpoint progress after session 3; empty result fields
+
+- **Observed**: 6-session relay exhausted without terminal. Sessions 1–3
+  advanced the checkpoint (mtime 01:12 → 02:06 → 02:23); sessions 4–6 did
+  not move it. Session 5 returned rc=0 (real result received) but the
+  result JSON carried `terminal_result=-1, segments_pending=-1,
+  effective_coverage=-1.0` and empty task/plan ids, so the relay treated
+  it as non-terminal.
+- **Implication**: the resume path (executor side) neither completes the
+  task nor reports usable state — coverage sessions past #3 may be
+  re-running the same frontier with no persistence.
+- **Suspicion**: message/state drift between the installed
+  `tunnel_coverage_msgs`/executor (built 2026-09-02 22:56) and the
+  current `coverage-cleaning-track` client; or the executor not actually
+  deserialising the checkpoint.
+- **Action**: park local relay debugging; re-run the full coverage task
+  on the cloud Ubuntu host (checkpoint file preserved at
+  `~/tunnel_coverage_checkpoints/6649dcb8bd86297e_2f2c3d0baa26ae2b.cp`)
+  with a rebuilt, version-consistent workspace; keep the empty-result
+  sample in `~/cov_resume_out/session_5/` for the root-cause pass.
