@@ -92,3 +92,24 @@ All `tunnel_frontier_explorer` unit tests and linter checks pass
 independently. The 21 failures above are confined to the `benchmark_tools`
 package and do not affect the frontier explorer's correctness or build
 validity.
+
+---
+
+## ExecuteCoverage CANCELED result never reaches the client (graceful-cancel hang)
+
+- **First observed**: 2026-09-04 01:12 (+0800), coverage relay session 1
+  (commit 1ba013e tree, clocksource `hyperv_clocksource_tsc_page`).
+- **Symptom**: `send_coverage_goal.py` cancels the goal at the session limit
+  (420 s). The executor saves the checkpoint (file mtime matches the cancel
+  epoch) but the action result never arrives; the client then hangs past its
+  bounded `spin_until_future_complete(20 s + 30 s)` waits — observed 28 min
+  with no log output.
+- **Impact**: relay harness stalls indefinitely on the cancelling session.
+- **Workaround (committed)**: client hard-exits via `os._exit(3)` when the
+  CANCELED result is not received (bff82c5); the relay wraps the client in
+  `timeout -s INT -k 10 640` and, on a missing result JSON, resumes from the
+  newest checkpoint file.
+- **Root cause (open, executor-side)**: `tunnel_coverage_executor` does not
+  return the `CANCELED` terminal state after accepting a cancel while
+  finishing the current segment. Needs a C++ fix + unit test before the
+  relay can rely on clean cancel results.
