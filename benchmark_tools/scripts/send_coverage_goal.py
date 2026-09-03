@@ -36,11 +36,18 @@ from tunnel_coverage_msgs.action import ExecuteCoverage
 
 
 def _jsonable(value):
+    """Recursively convert a result (rosidl message or plain data) to JSON."""
+    # rosidl message types use __slots__ (no __dict__).
+    slots = getattr(value, '__slots__', None)
+    if slots:
+        return {k: _jsonable(getattr(value, k)) for k in slots}
     if hasattr(value, '__dict__'):
-        return {k: _jsonable(v) for k, v in value.__dict__.items()}
+        return {k: _jsonable(v) for k, v in vars(value).items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
-    return value
+    if isinstance(value, (int, float, bool, str)) or value is None:
+        return value
+    return str(value)
 
 
 class CoverageGoalClient(Node):
