@@ -5,6 +5,10 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# bags/ holds run artifacts and is gitignored; make sure it exists so
+# fresh clones can symlink-install (R23 failure runs are kept there).
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bags")
+
 install(DIRECTORY scenarios bags config
   DESTINATION share/${PROJECT_NAME}
 )
