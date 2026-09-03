@@ -82,6 +82,9 @@ class CoverageGoalClient(Node):
             if not result_future.done():
                 self.get_logger().warn('Cancel result not received in time')
                 return None
+            self.get_logger().info('Goal cancelled; executor saved checkpoint')
+        else:
+            self.get_logger().info('Goal finished')
         result = result_future.result().result
         self.get_logger().info('Terminal result: %d class=%s' % (
             result.terminal_result, result.failure_class))
@@ -102,8 +105,8 @@ def main():
     node = CoverageGoalClient(args.resume)
     try:
         result = node.run(args.timeout, args.max_seconds)
-        os.makedirs(args.output_dir, exist_ok=True)
         data = _jsonable(result)
+        os.makedirs(args.output_dir, exist_ok=True)
         with open(os.path.join(args.output_dir, 'coverage_goal_result.json'),
                   'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
@@ -119,6 +122,11 @@ def main():
                   'w', encoding='utf-8') as f:
             f.write('\n'.join(md) + '\n')
         return 0 if result is not None else 2
+    except Exception as exc:  # noqa: BLE001 - never fail silently
+        node.get_logger().error('send_coverage_goal failed: %s' % exc)
+        import traceback
+        traceback.print_exc()
+        return 3
     finally:
         node.destroy_node()
         rclpy.shutdown()
