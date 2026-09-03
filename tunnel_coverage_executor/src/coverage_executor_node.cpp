@@ -456,6 +456,7 @@ void CoverageExecutorNode::sendNextSegment()
   if (idx != exec_index_) {
     exec_index_ = idx;
     exec_attempt_ = 0;  // fresh attempts for a new segment
+    work_nav_mode_ = false;
     RCLCPP_INFO(get_logger(), "-> next segment %s (idx=%d)", seg.id.c_str(), idx);
   }
   if (seg.type == tunnel_coverage_planner::SegmentType::TRANSITION) {
@@ -468,6 +469,16 @@ void CoverageExecutorNode::sendNextSegment()
   // WORK segment: reposition if not at the start, then follow the line.
   setPhase(PHASE_EXECUTING_SEGMENT);
   tunnel_map_core::Point2D pose;
+  if (work_nav_mode_) {
+    // FollowPath proved unreliable for this row: drive it to its end with
+    // NavigateToPose (endpoint + real sweep are still verified on success).
+    tunnel_map_core::Point2D start{seg.start_x, seg.start_y};
+    getRobotPose(start);
+    work_row_start_pose_ = start;
+    child_mode_ = 4;
+    sendNavigate(seg);
+    return;
+  }
   if (!getRobotPose(pose) ||
     dist2d(pose.x, pose.y, seg.start_x, seg.start_y) >
     std::max(endpoint_tolerance_m_, 0.05))
@@ -538,7 +549,7 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
     return;
   }
 
-  if (ok && mode == 3) {
+  if (ok && (mode == 3 || mode == 4)) {
     // Work completes only when the robot actually reached the segment end
     // (R20, geometric gate; real-sweep gate is the global coverage check).
     tunnel_map_core::Point2D pose;
@@ -556,7 +567,7 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
     // Commit the real swept pass of this work row into the CoverageGrid:
     // from the row-start pose to the robot's current (end) pose.  Nav2
     // transitions never sweep (R3/R9).
-    if (mode == 3 && tracker_ && work_row_start_pose_) {
+    if ((mode == 3 || mode == 4) && tracker_ && work_row_start_pose_) {
       tunnel_map_core::Point2D end_pose;
       if (getRobotPose(end_pose)) {
         tracker_->addSweepSegment(*work_row_start_pose_, end_pose);
@@ -570,7 +581,14 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
 
   work_row_start_pose_.reset();
 
-  // Transition (mode 2) or work (mode 3) failure: bounded retry.
+  if (mode == 3 && !work_nav_mode_) {
+    work_nav_mode_ = true;
+    RCLCPP_WARN(get_logger(),
+      "Work segment %s FollowPath failed — switching to nav fallback",
+      seg.id.c_str());
+  }
+
+  // Transition (mode 2) or work (mode 3/4) failure: bounded retry.
   if (exec_attempt_ < max_attempts_per_segment_) {
     ++exec_attempt_;
     RCLCPP_WARN(get_logger(),
@@ -581,7 +599,8 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
   }
   core_->markFailed(static_cast<std::size_t>(idx));
   if (failure_class_.empty()) {
-    failure_class_ = mode == 3 ? "WORK_TRACKING_FAILED" : "TRANSITION_FAILED";
+    failure_class_ =
+      (mode == 3 || mode == 4) ? "WORK_TRACKING_FAILED" : "TRANSITION_FAILED";
   }
   RCLCPP_ERROR(get_logger(), "Segment %s -> FAILED", seg.id.c_str());
 }

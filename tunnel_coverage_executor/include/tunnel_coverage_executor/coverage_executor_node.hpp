@@ -159,8 +159,11 @@ private:
   double cancel_grace_s_ = 20.0;
   // What the in-flight child goal is doing:
   // 1 = repositioning to a work-line start (approach), 2 = a plan TRANSITION
-  // segment, 3 = following a WORK segment.
+  // segment, 3 = following a WORK segment, 4 = navigating a WORK row to its
+  // end (nav fallback when FollowPath is unreliable).
   int child_mode_ = 0;
+  /// Once FollowPath fails for a work row, drive the row with NavigateToPose.
+  bool work_nav_mode_ = false;
 
   // Cancel/stop-confirmation state.
   bool cancel_requested_ = false;
