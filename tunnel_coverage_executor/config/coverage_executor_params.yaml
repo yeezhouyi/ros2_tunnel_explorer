@@ -15,7 +15,7 @@ tunnel_coverage_executor:
     stop_confirm_timeout_s: 8.0
     min_effective_coverage: 0.97
     max_attempts_per_segment: 2
-    checkpoint_dir: "/tmp/tunnel_coverage_checkpoints"
+    checkpoint_dir: "/home/zhouyi/tunnel_coverage_checkpoints"
 
     # Robot + cleaning geometry (TurtleBot3, centred virtual brush)
     robot_radius_m: 0.13
