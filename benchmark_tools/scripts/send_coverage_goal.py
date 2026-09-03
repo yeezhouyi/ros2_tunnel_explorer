@@ -80,8 +80,16 @@ class CoverageGoalClient(Node):
             rclpy.spin_until_future_complete(self, cancel_future, timeout_sec=20.0)
             rclpy.spin_until_future_complete(self, result_future, timeout_sec=30.0)
             if not result_future.done():
-                self.get_logger().warn('Cancel result not received in time')
-                return None
+                # Known rclpy/executor hang (2026-09-04): the executor saves
+                # the checkpoint on cancel but the CANCELED result never
+                # reaches the client, and the bounded spins above can still
+                # fail to wake.  Bail out hard — the relay treats a missing
+                # result JSON as NO_RESULT and resumes from the checkpoint.
+                self.get_logger().warn(
+                    'Cancel result not received; checkpoint expected at %s '
+                    '(executor saves it on cancel). Hard-exiting.' % (
+                        self.resume or '<task-plan checkpoint>'))
+                os._exit(3)
             self.get_logger().info('Goal cancelled; executor saved checkpoint')
         else:
             self.get_logger().info('Goal finished')
