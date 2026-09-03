@@ -56,7 +56,7 @@ class CoverageGoalClient(Node):
         self.client = ActionClient(self, ExecuteCoverage, 'execute_coverage')
         self.resume = resume_path
 
-    def run(self, timeout_s: float):
+    def run(self, timeout_s: float, max_seconds: float = 0.0):
         if not self.client.wait_for_server(timeout_sec=10.0):
             raise RuntimeError('execute_coverage action server not available')
         goal = ExecuteCoverage.Goal()
@@ -70,10 +70,18 @@ class CoverageGoalClient(Node):
             raise RuntimeError('goal rejected by executor (not READY_IDLE?)')
         self.get_logger().info('Goal accepted, waiting for result...')
         result_future = gh.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future, timeout_sec=timeout_s)
+        limit = max_seconds if max_seconds and max_seconds > 0.0 else timeout_s
+        rclpy.spin_until_future_complete(self, result_future, timeout_sec=limit)
         if not result_future.done():
-            self.get_logger().warn('Timed out waiting for result')
-            return None
+            self.get_logger().warn(
+                'Session time limit reached after %.0f s — cancelling '
+                'gracefully so the executor saves a checkpoint', limit)
+            cancel_future = gh.cancel_goal()
+            rclpy.spin_until_future_complete(self, cancel_future, timeout_sec=20.0)
+            rclpy.spin_until_future_complete(self, result_future, timeout_sec=30.0)
+            if not result_future.done():
+                self.get_logger().warn('Cancel result not received in time')
+                return None
         result = result_future.result().result
         self.get_logger().info('Terminal result: %d class=%s' % (
             result.terminal_result, result.failure_class))
@@ -83,6 +91,9 @@ class CoverageGoalClient(Node):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--timeout', type=float, default=1200.0)
+    parser.add_argument('--max-seconds', type=float, default=0.0,
+                        help='gracefully cancel the goal after this many '
+                             'seconds so the executor saves a checkpoint')
     parser.add_argument('--output-dir', default='/tmp')
     parser.add_argument('--resume', default='')
     args = parser.parse_args()
@@ -90,7 +101,7 @@ def main():
     rclpy.init()
     node = CoverageGoalClient(args.resume)
     try:
-        result = node.run(args.timeout)
+        result = node.run(args.timeout, args.max_seconds)
         os.makedirs(args.output_dir, exist_ok=True)
         data = _jsonable(result)
         with open(os.path.join(args.output_dir, 'coverage_goal_result.json'),
