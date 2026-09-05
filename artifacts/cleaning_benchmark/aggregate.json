@@ -1,0 +1,27 @@
+{
+ "total_manifests": 30,
+ "expected": 30,
+ "by_planner": {
+  "boustrophedon_astar": {
+   "n": 15,
+   "ok": 15,
+   "cov_min_max": [
+    1.0,
+    1.0
+   ],
+   "len_median": 414.5,
+   "planning_ms_median": 11.1
+  },
+  "spiral_or_existing_baseline": {
+   "n": 15,
+   "ok": 15,
+   "cov_min_max": [
+    1.0,
+    1.0
+   ],
+   "len_median": 797.4,
+   "planning_ms_median": 0.5
+  }
+ },
+ "non_ok_dirs": []
+}
