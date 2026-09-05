@@ -31,3 +31,23 @@ spacing 利用率;修复后按 R10 同时报 task/known_free 两个分母。
 
 状态:COVERAGE_BELOW_THRESHOLD 保留;阈值未动;审计 JSON 与 .npy
 mask 已归档(known_free/obstacle/unknown/visited)。
+
+## 追加(代码级定位,2026-09-06)
+
+离线复现 plan(/tmp 工具,链 install 库,同地图同参数):
+- masks: intended_target = reachable_cleanable = 7700(ratio 1.000)→ 无 mask 级排除;
+- planMultiCell: segments_total=37(19 WORK + 18 转移)与线上一致;
+- WORK 段 19 × 3.05m = **57.95m,计划本身足以全覆盖**(seed 位姿无关)。
+
+**F1 修订(真根因)**:coverage_executor_node.cpp:575-580 ——
+`addSweepSegment(work_row_start_pose_, end_pose)` 只把"行起点→Nav2 报告成功时
+位姿"的**直线弦**沿途 stampDisc;Nav2 实际弧线行驶的扫掠不写入
+(tfSamplerCallback 明确不写 grid)。弦长合计 22.55m(计划的 39%),这就是
+56.7% 的来源;`markCovered` 无条件执行,"37/37 covered" 分母还混入 18 个
+转移段,是虚账。
+
+修复方向(单机制,需回归对照):
+a) WORK 段执行期间按 odom/TF 采样写入 CoverageGrid(去重后计 repeat),
+   替代起点→终点弦;或
+b) recordSegment 记**计划段**几何并如实报告弦长/计划长比值。
+两案都需重跑 U6 干净对照 + 回归 cleaning_room_rect 的 37 段行为。
