@@ -87,3 +87,27 @@ frozen driver v2(run_stage3c_aligned.py,856bbb8):timeout 1500s、
    写进 driver,重跑对齐;
 2. seed 5 类启动异常单列(frontier explorer 就绪性检查);
 3. 1500s 不够则按宣告式修订协议版本(v3),仍全字段声明。
+
+---
+
+# U9 实施规格(entrance hysteresis,单机制,实验分支)
+
+插入点已定位(源码级):
+- 参数:`tunnel_frontier_explorer/src/frontier_explorer_node.cpp:96-109`
+  既有 loop/recovery 参数块旁加 `entrance_hysteresis_enabled`(默认
+  **false**,AE5:回归通过前不启用)、`entrance_cooldown_s=20.0`、
+  `entrance_radius_m=1.0`;
+- 机制:dispatch 站(goal_msg 构造处,:368 附近)记录最近一次接受
+  goal 的位姿+时间;新候选若在 cooldown 内且距上次 goal
+  < entrance_radius_m → 拒绝该簇(加入 frontier_blacklist 本周期
+  排除),重选次优——FrontierGoalSelector 只返回最优,次优经
+  blacklist 重选获得(黑名单机制已存在);
+- 单元测试:cooldown 内同区候选被拒、超窗后放行、radius 外放行、
+  hysteresis 关闭时零行为变化(守恒测试)。
+
+回归门禁(AE5):对齐协议 v2 下 Stage 3C 5-run(预期改善)与
+Stage 3D 5-run(不得低于 5/5、4/4 探针、Nav2 100%)——两套都过
+才允许 enabled=true 合入主线;否则留实验分支+失败证据。
+
+状态:机制未实现(本规格即施工图);对齐 v2 基线已就绪
+(0/5@1500s 全字段声明)。
