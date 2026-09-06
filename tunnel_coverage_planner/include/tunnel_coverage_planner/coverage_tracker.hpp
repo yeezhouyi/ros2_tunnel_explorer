@@ -91,6 +91,14 @@ public:
   /// Stamp the footprint once at @p pose (zero-length pass).
   void addToolPose(const ToolPose & pose);
 
+  /// Stamp the tool disc along the ACTUAL driven polyline (U7 fix for the
+  /// chord-only sweep bookkeeping: Nav2 curves between row endpoints were
+  /// previously reduced to the straight chord, losing the swept cells).
+  /// The whole polyline commits as ONE pass (per-cell dedup within the
+  /// pass, preserving repeat semantics) and path_length_m_ accumulates the
+  /// true driven length.
+  void addSweptPath(const std::vector<tunnel_map_core::Point2D> & pts);
+
   /// Recompute all metrics from current visit counts.
   CoverageMetrics metrics() const;
 

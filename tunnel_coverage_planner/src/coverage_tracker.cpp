@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <vector>
 #include "tunnel_coverage_planner/coverage_tracker.hpp"
 
 #include <algorithm>
@@ -129,6 +130,43 @@ void CoverageTracker::addSweepSegment(
 void CoverageTracker::addToolPose(const ToolPose & pose)
 {
   addSweepSegment(pose.position, pose.position);
+}
+
+void CoverageTracker::addSweptPath(
+  const std::vector<tunnel_map_core::Point2D> & pts)
+{
+  if (pts.empty()) {
+    return;
+  }
+  const double cell_area = geometry_.cellSize() * geometry_.cellSize();
+
+  // One pass over the whole driven polyline: cells touched multiple times
+  // inside the same row count once (repeat = touched by >1 pass).
+  std::fill(mark_buf_.begin(), mark_buf_.end(), 0);
+
+  std::size_t union_marked = 0;
+  double driven = 0.0;
+  for (std::size_t k = 1; k < pts.size(); ++k) {
+    const auto & a = pts[k - 1];
+    const auto & b = pts[k];
+    const double len = std::sqrt(dist2(a, b));
+    if (len <= 0.0) {
+      union_marked += stampDisc(a);
+      continue;
+    }
+    const int n = std::max(1, static_cast<int>(std::ceil(len / max_step_m_)));
+    for (int i = 0; i <= n; ++i) {
+      const double t = static_cast<double>(i) / static_cast<double>(n);
+      tunnel_map_core::Point2D p;
+      p.x = a.x + t * (b.x - a.x);
+      p.y = a.y + t * (b.y - a.y);
+      union_marked += stampDisc(p);
+    }
+    driven += len;
+  }
+  total_swept_area_m2_ += static_cast<double>(union_marked) * cell_area;
+  commitPass();
+  path_length_m_ += driven;
 }
 
 void CoverageTracker::commitPass()

@@ -498,6 +498,8 @@ void CoverageExecutorNode::sendNextSegment()
   }
   child_mode_ = 3;  // follow the work line
   work_row_start_pose_ = pose;
+  work_row_path_.clear();
+  work_row_path_.push_back(pose);
   sendFollow(seg);
 }
 
@@ -573,11 +575,17 @@ void CoverageExecutorNode::processOutcome(int idx, bool ok)
     // from the row-start pose to the robot's current (end) pose.  Nav2
     // transitions never sweep (R3/R9).
     if ((mode == 3 || mode == 4) && tracker_ && work_row_start_pose_) {
-      tunnel_map_core::Point2D end_pose;
-      if (getRobotPose(end_pose)) {
-        tracker_->addSweepSegment(*work_row_start_pose_, end_pose);
+      if (work_row_path_.size() >= 2) {
+        // U7 fix: stamp the actual driven polyline (curves included)
+        tracker_->addSweptPath(work_row_path_);
+      } else {
+        tunnel_map_core::Point2D end_pose;
+        if (getRobotPose(end_pose)) {
+          tracker_->addSweepSegment(*work_row_start_pose_, end_pose);
+        }
       }
     }
+    work_row_path_.clear();
     work_row_start_pose_.reset();
     core_->markCovered(static_cast<std::size_t>(idx));
     RCLCPP_INFO(get_logger(), "Segment %s -> COVERED", seg.id.c_str());
@@ -733,11 +741,17 @@ bool CoverageExecutorNode::getRobotPose(tunnel_map_core::Point2D & pose) const
 
 void CoverageExecutorNode::tfSamplerCallback()
 {
-  // Coverage passes are batched per executed work row in processOutcome():
-  // stamping every 10 Hz sample would turn interpolation overlap inside one
-  // row into fake "repeat coverage".  This sampler remains as a hook for
-  // stall/telemetry logic; it does not write the CoverageGrid (R3).
-  (void)0;
+  // U7 fix: while a work row is executing, buffer the actual robot pose.
+  // The polyline is committed ONCE at row completion (addSweptPath), so the
+  // per-pass dedup still prevents 10 Hz overlap from faking repeat
+  // coverage — but the curved Nav2 path is no longer reduced to the
+  // straight chord between row endpoints.
+  if ((child_mode_ == 3 || child_mode_ == 4) && work_row_start_pose_) {
+    tunnel_map_core::Point2D pose;
+    if (getRobotPose(pose)) {
+      work_row_path_.push_back(pose);
+    }
+  }
 }
 
 // ── Cancelling ──────────────────────────────────────────────────────────

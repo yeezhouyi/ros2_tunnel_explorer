@@ -177,6 +177,9 @@ private:
   /// First pose of the currently executed work row (for one sweep pass into
   /// the tracker when the row completes).
   std::optional<tunnel_map_core::Point2D> work_row_start_pose_;
+  // U7 fix: actual driven poses sampled during a work row; committed as a
+  // polyline sweep on row completion (replaces the chord-only record).
+  std::vector<tunnel_map_core::Point2D> work_row_path_;
 
   // ── Helpers ────────────────────────────────────────────────────────────
   bool getRobotPose(tunnel_map_core::Point2D & pose) const;

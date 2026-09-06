@@ -156,6 +156,40 @@ TEST(CoverageTrackerTest, StraightLineSweepWidth)
   EXPECT_NEAR(m.path_length_m, 1.4, 1e-9);
 }
 
+// U7 regression: a curved sweep must cover MORE cells than the straight
+// chord between its endpoints.  The executor previously recorded only the
+// chord (addSweepSegment start->end), losing the swept cells of every
+// curved Nav2 pass (audit F1/F3).
+TEST(CoverageTrackerTest, ChordUnderestimatesCurvedSweep)
+{
+  auto map = makeRectMap();
+  GridGeometry geo(map);
+  auto masks = allFreeMasks(geo);
+
+  // quarter circle, radius 1 m, centred at (0, 0): from (1, 0) to (0, 1)
+  constexpr int kSamples = 64;
+  std::vector<Point2D> arc;
+  for (int i = 0; i <= kSamples; ++i) {
+    const double th = (M_PI / 2.0) * i / kSamples;
+    arc.push_back({std::cos(th), std::sin(th)});
+  }
+  const Point2D & start = arc.front();
+  const Point2D & end = arc.back();
+
+  CoverageTracker chord(geo, masks, 0.25);
+  chord.addSweepSegment(start, end);
+  CoverageTracker swept(geo, masks, 0.25);
+  swept.addSweptPath(arc);
+
+  const auto mc = chord.metrics();
+  const auto ms = swept.metrics();
+  // driven length: chord 1.414 m vs arc pi/2 ~ 1.571 m
+  EXPECT_NEAR(mc.path_length_m, 1.4142, 1e-3);
+  EXPECT_NEAR(ms.path_length_m, 1.5708, 1e-3);
+  // the curved pass covers strictly more target cells than the chord
+  EXPECT_GT(ms.effective_coverage, mc.effective_coverage);
+}
+
 TEST(CoverageTrackerTest, BackAndForthCreatesRepeats)
 {
   auto map = makeRectMap();
