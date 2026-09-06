@@ -135,3 +135,32 @@ Stage 3D 5-run(不得低于 5/5、4/4 探针、Nav2 100%)——两套都过
 
 执行方差:repeat 16.4%→66.7%,unique visited 5405→4698(驱更远、
 重复更多)——Nav2 执行方差真实存在,单 run 结论需 5-run 支撑。
+
+# U9 对齐 A/B 结果(2026-09-07,entrance hysteresis ON vs OFF)
+
+同协议 v2(1500s/120s/(0,1))、同世界、recovery ON:
+
+| seed | hysteresis OFF | hysteresis ON |
+|---|---|---|
+| 1 | TIMEOUT, 22 goals | **COMPLETED 590.6s, 12 goals** |
+| 2 | TIMEOUT, 32 goals | TIMEOUT, 47 goals |
+| 3 | TIMEOUT, 0 goals | TIMEOUT, 0 goals |
+| 4 | TIMEOUT, 26 goals | TIMEOUT, 36 goals |
+| 5 | TIMEOUT, 1 goal | TIMEOUT, 1 goal |
+| 合计 | 0/5, 81 goals | **1/5, 97 goals** |
+
+## 判定(按 AE5)
+
+- seed 1:完成时间 1500s→590.6s,goal 数 22→12( thrash 减少 45%)
+  ——hysteresis 在该种子上兑现了设计意图;
+- 合计完成 0/5→1/5(n=5,统计上不足以声明整体改善);
+- seed 3/5 的零/近零 goal 在 OFF/ON 两轮一致复现 → **对齐驱动器的
+  explorer 就绪性竞争**是驱动器自身问题,与机制无关,单列;
+- 无 3D 回退信号(recovery 保持 ON,goal 流未死锁)。
+
+## 决定(遵循 AE5 治理)
+
+机制**保留在实验分支 u9-entrance-hysteresis**,不合入主线:
+改善样本 1/5 不足以支撑 enabled=true 的默认值;需要 (a) 修复驱动器
+就绪性竞争后重跑,(b) 或以完成时间为主指标做更多 run。合入前置
+条件=就绪性修复 + 完成时间中位数改善的可复现证据。

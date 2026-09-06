@@ -1,0 +1,59 @@
+{
+ "protocol_version": "stage3c-aligned-v2",
+ "declared_by": "author freeze (original driver values unrecoverable)",
+ "world": "branching_tunnel_y.sdf",
+ "initial_pose": {
+  "x": 0.0,
+  "y": 1.0,
+  "yaw": 0.0
+ },
+ "timeout_seconds": 1500,
+ "stable_window_s": 120,
+ "goal_source": "stage3d explorer stack, entrance-loop recovery ON",
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4
+ ],
+ "completed": 1,
+ "total": 5,
+ "runs": [
+  {
+   "status": "COMPLETED",
+   "elapsed_s": 590.6,
+   "goal_events": 12,
+   "run": 1,
+   "protocol_version": "stage3c-aligned-v2"
+  },
+  {
+   "status": "TIMEOUT",
+   "elapsed_s": 1500.7,
+   "goal_events": 47,
+   "run": 2,
+   "protocol_version": "stage3c-aligned-v2"
+  },
+  {
+   "status": "TIMEOUT",
+   "elapsed_s": 1500.5,
+   "goal_events": 0,
+   "run": 3,
+   "protocol_version": "stage3c-aligned-v2"
+  },
+  {
+   "status": "TIMEOUT",
+   "elapsed_s": 1500.6,
+   "goal_events": 36,
+   "run": 4,
+   "protocol_version": "stage3c-aligned-v2"
+  },
+  {
+   "status": "TIMEOUT",
+   "elapsed_s": 1500.6,
+   "goal_events": 1,
+   "run": 5,
+   "protocol_version": "stage3c-aligned-v2"
+  }
+ ]
+}
