@@ -109,7 +109,7 @@ std::size_t FrontierScorer::countUnknownCellsInRadius(
       }
 
       const std::size_t idx = static_cast<std::size_t>(r) * map.width +
-                              static_cast<std::size_t>(c);
+        static_cast<std::size_t>(c);
       if (map.data[idx] == -1) {
         ++count;
       }
@@ -213,7 +213,8 @@ std::vector<ScoredGoal> FrontierScorer::scoreAndRank(
 
       // 2. Distance ascending (closer = better).
       if (std::abs(a.goal_distance_meters - b.goal_distance_meters) >
-          kScoreEpsilon) {
+      kScoreEpsilon)
+      {
         return a.goal_distance_meters < b.goal_distance_meters;
       }
 
@@ -224,7 +225,8 @@ std::vector<ScoredGoal> FrontierScorer::scoreAndRank(
 
       // 4. Representative row ascending.
       if (a.cluster.representative_cell.row !=
-          b.cluster.representative_cell.row) {
+      b.cluster.representative_cell.row)
+      {
         return a.cluster.representative_cell.row <
                b.cluster.representative_cell.row;
       }

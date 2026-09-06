@@ -495,3 +495,16 @@ See [docs/jazzy_compatibility.md](docs/jazzy_compatibility.md) for full details.
 ## License
 
 Apache-2.0
+
+## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)
+
+- **cleaning_mode/**:弓形覆盖规划器(障碍膨胀/扫描线分解/A* 连接/
+  覆盖规划/路径平滑)+ map_saver PGM/YAML 加载器。测试 16/16 绿。
+- **30-run 离线基准**:boustrophedon 中位路径 **414.5m** vs 逐行基线
+  797.4m(**短 48%**),规划 11ms,全部 OK(`artifacts/cleaning_benchmark/`)。
+- **B6 全链**:探索(录制 1820 位姿)→ MPC `path_file` 跟踪(live 位移
+  0.395m PASS)→ 离线审计(子集 e_y_rms **0.0013m**)。序列见
+  `docs/b6_demo.md`,首跑结果与覆盖率回归见 `docs/coverage_audit_u7.md`。
+- **U7 覆盖率审计**:弦标记 bug 代码级定位→修复(addSweptPath)→
+  回归验证(stamped 4700 ≈ odom 重建 4698);exempt 分母(31%)列为
+  下一审计对象。全部为 WSL2/Gazebo 仿真结果。

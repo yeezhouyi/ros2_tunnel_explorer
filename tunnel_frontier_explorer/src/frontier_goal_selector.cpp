@@ -47,7 +47,8 @@ Point2D FrontierGoalSelector::gridToWorld(
 
 // ── collectAccepted (shared helper) ─────────────────────────────────────────
 
-namespace {
+namespace
+{
 
 /// Per-cluster filtering: check distance, find alternative if needed.
 /// Modifies cluster representative in-place for accepted clusters.

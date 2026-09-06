@@ -188,7 +188,8 @@ private:
   static constexpr std::size_t k_max_all_suppressed_cycles_ = 180;
 
   // ── Stage 3D sliding-window loop tracking ──────────────────────
-  struct GoalBinRecord {
+  struct GoalBinRecord
+  {
     int bin_x;
     int bin_y;
     bool succeeded;
@@ -203,6 +204,12 @@ private:
   int recovery_failure_count_ = 0;
   rclcpp::Time recovery_probe_last_time_{0, 0, RCL_ROS_TIME};
   int recovery_attempt_count_ = 0;
+  // U9 entrance-goal hysteresis
+  bool entrance_hysteresis_enabled_ = false;
+  double entrance_cooldown_s_ = 20.0;
+  double entrance_radius_m_ = 1.0;
+  std::optional<Point2D> last_hysteresis_goal_;
+  std::chrono::steady_clock::time_point last_hysteresis_time_{};
 };
 
 }  // namespace tunnel_frontier_explorer

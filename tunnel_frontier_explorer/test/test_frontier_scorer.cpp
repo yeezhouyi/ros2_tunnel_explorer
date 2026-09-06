@@ -30,8 +30,9 @@ namespace tunnel_frontier_explorer
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Build a map with known dimensions.  All cells default to -1 (unknown).
-GridMap makeMap(std::size_t w, std::size_t h, double res = 0.1,
-                double ox = 0.0, double oy = 0.0)
+GridMap makeMap(
+  std::size_t w, std::size_t h, double res = 0.1,
+  double ox = 0.0, double oy = 0.0)
 {
   GridMap m;
   m.width = w;
