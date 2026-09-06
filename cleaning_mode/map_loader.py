@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from cleaning_mode.obstacle_inflation import CleanGrid
+from cleaning_mode.obstacle_inflation import boundary_exclusion_mask
 
 
 def read_pgm(path: str) -> np.ndarray:
@@ -54,7 +54,7 @@ def read_pgm(path: str) -> np.ndarray:
     return img.reshape(height, width)
 
 
-def load_map(yaml_path: str, negate: bool = False) -> CleanGrid:
+def load_map_grid(yaml_path: str, negate: bool = False) -> dict:
     import yaml
 
     meta = yaml.safe_load(Path(yaml_path).read_text())
@@ -72,11 +72,14 @@ def load_map(yaml_path: str, negate: bool = False) -> CleanGrid:
     if (grid == 100).sum() > 0.6 * grid.size:
         grid = np.where(img <= 50, 0, np.where(img >= 220, 100, -1)).astype(np.int16)
     origin = meta.get("origin", [0.0, 0.0, 0.0])
-    return make_clean(grid, float(meta["resolution"]),
-                      (float(origin[0]), float(origin[1])))
-
-
-def make_clean(grid: np.ndarray, resolution: float, origin) -> CleanGrid:
-    from cleaning_mode.obstacle_inflation import make_clean_grid
-
-    return make_clean_grid(grid, resolution, origin, unknown_policy="obstacle")
+    known_free = (grid == 0)
+    return {
+        "occupancy": grid,
+        "known_free": known_free,
+        "obstacle": (grid == 100),
+        "unknown": (grid == -1),
+        "boundary_excluded": boundary_exclusion_mask(grid.shape, margin_cells=1),
+        "meta": {"resolution": float(meta["resolution"]),
+                 "origin": [float(origin[0]), float(origin[1])],
+                 "image": str(Path(yaml_path).parent / meta["image"])},
+    }
