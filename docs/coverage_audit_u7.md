@@ -197,3 +197,24 @@ Stage 3D 5-run(不得低于 5/5、4/4 探针、Nav2 100%)——两套都过
 planned_coverage(1.0×可执行比例)。
 
 状态:链路本身全通(五步皆留产物),发现已定位,修复列下一单元。
+
+## Exempt 分母审计(2026-09-07,sandbox 全链 run)
+
+两层口径实测:
+- **plan 层**(cleaning_mode):executable = known_free − 2 格膨胀 =
+  6266/7860(**79.7%**)——膨胀排除全部贴墙/贴障;
+- **executor 层**(coverage_executor):effective 分母 ≈ 5300/7700
+  (**~69%**)——exempt 额外排除 ~11%,来源 = cleanable_map_builder 的
+  island 面积门槛 + doorway 带宽门槛(源码 :240-290 一带)。
+
+结论:两个口径的覆盖百分比差(88.6% vs 61.0% 全自由区分母)主要来自
+exempt 集合的定义,而非测量分歧(盖章格与 odom 重建格 0.04% 收敛已证)。
+下一步(单机制):逐门槛关闭对照,量化 island 门槛与 doorway 带宽各贡献
+多少 exempt 格;达标线 = 清洁任务语义决定的必要排除(贴障膨胀),其余
+应回到 candidate。
+
+## 本会话未完项(均需外部条件或新会话)
+
+- RRBot 原生 Linux 对照(需非 WSL 机器);
+- stage3d→main 合并(建议 PR 描述引用 U7/U8/U9 审计文档);
+- B6 弦修复的 5-run 统计(单 run 已验证方向)。
