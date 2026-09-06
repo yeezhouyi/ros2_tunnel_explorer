@@ -14,6 +14,8 @@ from heapq import heappop, heappush
 from math import hypot
 from typing import Iterator
 
+import math
+
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
@@ -167,6 +169,49 @@ def sweep_segments(cell: np.ndarray,
 # ============================================================
 # 跨 cell 蛇形连接
 # ============================================================
+
+def _uturn_cap(path: list[GridPoint], next_start: GridPoint,
+               free: np.ndarray, spacing_cells: int) -> list[GridPoint] | None:
+    """Semicircular U-turn cap between two vertically adjacent serpentine
+    lane ends, bulging in the current travel direction.
+
+    Returns the cap point list (starting at path[-1]) or None when the
+    geometry is not a serpentine pair (non-aligned columns) or the cap
+    region leaves the free mask (caller falls back to A*).
+    """
+    if len(path) < 2:
+        return None
+    p1 = path[-1]
+    p2 = next_start
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    if abs(dy) != spacing_cells or abs(dx) > 1:
+        return None  # not a vertically adjacent serpentine pair
+    # travel direction of the just-finished lane
+    prev = path[-2]
+    tsign = 1 if p1[0] >= prev[0] else -1
+    cx = (p1[0] + p2[0]) / 2.0
+    cy = (p1[1] + p2[1]) / 2.0
+    r = abs(dy) / 2.0
+    a1 = math.atan2(p1[1] - cy, p1[0] - cx)   # -90 deg (P1 above centre)
+    a2 = math.atan2(p2[1] - cy, p2[0] - cx)   # +90 deg
+    # bulge side: through 0 rad (+x) when travelling +x, through pi (-x) else
+    if tsign > 0:
+        arc = [a1 + (a2 - a1 + 2 * math.pi) % (2 * math.pi) * t / 32.0
+               for t in range(33)]
+    else:
+        arc = [a1 - (a1 - a2 + 2 * math.pi) % (2 * math.pi) * t / 32.0
+               for t in range(33)]
+    pts = []
+    for a in arc:
+        x = int(round(cx + r * math.cos(a) - 0.0))
+        y = int(round(cy + r * math.sin(a) - 0.0))
+        if not (0 <= y < free.shape[0] and 0 <= x < free.shape[1])                 or not free[y, x]:
+            return None  # cap leaves the free mask
+        pts.append((x, y))
+    return pts
+
+
 def connected_boustrophedon(
     free: np.ndarray,
     spacing_cells: int,
@@ -218,6 +263,19 @@ def connected_boustrophedon(
             rest = segs
 
         for seg in rest:
+            # ── U-turn cap (U9/B6 fix): adjacent serpentine lanes are
+            # connected by a semicircular cap bulging in the travel
+            # direction, so the reference heading turns continuously
+            # instead of jumping 180° at a lateral hop (which stalls the
+            # forward-only MPC at the first lane end).
+            cap = _uturn_cap(path, seg[0], free, spacing_cells)
+            if cap is not None:
+                path.extend(cap[1:])  # cap[0] == path[-1]
+                if path[-1] == seg[0]:
+                    path.extend(seg[1:])
+                else:
+                    path.extend(seg)
+                continue
             connector = astar(path[-1], seg[0], free)
             if not connector:
                 if collision_check:
