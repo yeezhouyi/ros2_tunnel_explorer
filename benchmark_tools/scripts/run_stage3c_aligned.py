@@ -168,6 +168,7 @@ def main():
     ap.add_argument("--explorer-params", default="",
                     help="optional ros params yaml for the frontier explorer")
 
+    args = ap.parse_args()
     results = [one_run(i + 1, args.outdir, args) for i in range(args.runs)]
     n_ok = sum(1 for r in results if r["status"] == "COMPLETED")
     summary = dict(PROTOCOL)
