@@ -51,3 +51,39 @@ a) WORK 段执行期间按 odom/TF 采样写入 CoverageGrid(去重后计 repeat
    替代起点→终点弦;或
 b) recordSegment 记**计划段**几何并如实报告弦长/计划长比值。
 两案都需重跑 U6 干净对照 + 回归 cleaning_room_rect 的 37 段行为。
+
+---
+
+# U8 对齐 5-run 结果(2026-09-06,stage3c-aligned-v2)
+
+## 执行
+
+frozen driver v2(run_stage3c_aligned.py,856bbb8):timeout 1500s、
+稳定窗 120s、初始位姿 (0,1) 全字段声明;每 run manifest 携带完整协议。
+
+| seed | status | elapsed | goals |
+|---|---|---|---|
+| 1 | TIMEOUT | 1500.4 | 22 |
+| 2 | TIMEOUT | 1500.2 | 32 |
+| 3 | TIMEOUT | 1500.1 | 32 |
+| 4 | TIMEOUT | 1500.0 | 26 |
+| 5 | TIMEOUT(goals=1,explorer 启动异常单列) | 1500.0 | 1 |
+
+**0/5 COMPLETED**(判定:frontier markers 清空且无活跃 Nav2 goal
+持续 120s)。
+
+## 判定语义差异 = 可比性边界
+
+- 历史 3D 5/5 用的是原始 driver 的 **explorer 内部完成信号**(已失传);
+- v2 判定是"全部前沿消费完且静止 120s"——seed 1-4 的 goal 事件流
+  显示探索器 25 分钟内持续派发目标(无振荡死锁),是**未在 1500s 内
+  消费完前沿**,而非入口振荡复发;
+- 结论:历史 5/5、2/5 与 v2 的 0/5 属于**三种不同测量**,按 U8 规则
+  分组并列,不互相冒充。
+
+## 后续(真正闭合 U8)
+
+1. 把 explorer 内部完成语义(完成信号/覆盖率阈值)从源码反推并
+   写进 driver,重跑对齐;
+2. seed 5 类启动异常单列(frontier explorer 就绪性检查);
+3. 1500s 不够则按宣告式修订协议版本(v3),仍全字段声明。
