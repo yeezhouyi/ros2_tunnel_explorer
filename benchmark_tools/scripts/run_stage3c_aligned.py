@@ -129,9 +129,11 @@ def one_run(idx: int, outdir: str, args) -> dict:
             f"'{rundir}/bag' /clock /map /odom /tf {MARKER_TOPIC} "
             f"> '{rundir}/bag.log' 2>&1")
 
+    params_arg = (" params_file:=" + args.explorer_params
+                  ) if args.explorer_params else ""
     expl = sh(
         f"source /opt/ros/jazzy/setup.bash && source {BRANCH_DIR}/install/setup.bash && "
-        f"ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py "
+        f"ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py{params_arg} "
         f"> '{rundir}/frontier_explorer.log' 2>&1")
 
     result = mon.wait_terminal(args.timeout, args.stable_window)
@@ -163,7 +165,8 @@ def main():
                     default=PROTOCOL["stable_window_s"])
     ap.add_argument("--outdir", default=str(Path.home() / "stage3c_aligned"))
     ap.add_argument("--no-bag", action="store_true")
-    args = ap.parse_args()
+    ap.add_argument("--explorer-params", default="",
+                    help="optional ros params yaml for the frontier explorer")
 
     results = [one_run(i + 1, args.outdir, args) for i in range(args.runs)]
     n_ok = sum(1 for r in results if r["status"] == "COMPLETED")
