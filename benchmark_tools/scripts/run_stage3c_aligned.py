@@ -48,9 +48,10 @@ def sh(cmd: str, **kw) -> subprocess.Popen:
 
 class Monitor:
     def __init__(self):
+        # rclpy.init() is owned by the caller (one_run) — a second init
+        # here raised Context.init() must only be called once
         import rclpy
 
-        rclpy.init()
         self.rclpy = rclpy
         from rclpy.node import Node
 
