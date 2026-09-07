@@ -69,9 +69,9 @@ def test_connected_path_never_crosses_blocked():
     assert path
     # 每点都在 free 中
     assert all(free[y, x] for x, y in path)
-    # 相邻点 4 邻接
+    # 相邻点:4 邻接或半圆帽弧采样的 8 邻接单步;仍禁止穿障
     for (ax, ay), (bx, by) in zip(path, path[1:]):
-        assert abs(bx - ax) + abs(by - ay) == 1
+        assert max(abs(bx - ax), abs(by - ay)) == 1
 
 
 # ============================================================
@@ -114,8 +114,20 @@ def test_coverage_path_covers_all_traversable():
     free = np.ones((10, 10), dtype=bool)
     path = connected_boustrophedon(free, spacing_cells=1)  # every=1
     unique = set(path)
-    # 全覆盖 100 单元
-    assert len(unique) == 100
+    # U9: lane ends are trimmed by turn_r (the U-turn arc re-covers them), so
+    # the *path* no longer visits every cell; the tool disc (radius 1 cell)
+    # must still cover every free cell.
+    covered = set()
+    for x, y in path:
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx * dx + dy * dy <= 1:
+                    covered.add((x + dx, y + dy))
+    assert len(unique) >= 90          # trimmed lane ends
+    disc_cover = sum(
+        1 for yy in range(10) for xx in range(10)
+        if free[yy, xx] and (xx, yy) in covered)
+    assert disc_cover == 100
 
 
 def test_every_2_samples_even_rows():

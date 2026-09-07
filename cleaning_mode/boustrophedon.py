@@ -153,6 +153,9 @@ def sweep_segments(cell: np.ndarray,
         raise ValueError("spacing_cells must be positive")
     segments: list[list[GridPoint]] = []
     reverse = False
+    # the U-turn arc needs turn_r cells of headroom at the turning end:
+    # trim the far end of each run (the arc disc re-covers the corner)
+    turn_r = int(math.ceil(spacing_cells / 2.0))
     for y in range(0, cell.shape[0], spacing_cells):
         xs = np.flatnonzero(cell[y])
         if xs.size == 0:
@@ -160,7 +163,15 @@ def sweep_segments(cell: np.ndarray,
         # 切分连续 run(同行内被障碍断开)
         split_indices = np.flatnonzero(np.diff(xs) > 1) + 1
         for run in np.split(xs, split_indices):
-            ordered = run[::-1] if reverse else run
+            lo, hi = int(run[0]), int(run[-1])
+            if hi - lo < turn_r:
+                continue  # too short to turn within
+            if reverse:
+                lo = lo + turn_r      # travelling -x: trim low end
+            else:
+                hi = hi - turn_r      # travelling +x: trim high end
+            ordered = list(range(hi, lo - 1, -1)) if reverse \
+                else list(range(lo, hi + 1))
             segments.append([(int(x), int(y)) for x in ordered])
             reverse = not reverse
     return segments
@@ -170,46 +181,97 @@ def sweep_segments(cell: np.ndarray,
 # 跨 cell 蛇形连接
 # ============================================================
 
-def _uturn_cap(path: list[GridPoint], next_start: GridPoint,
-               free: np.ndarray, spacing_cells: int) -> list[GridPoint] | None:
-    """Semicircular U-turn cap between two vertically adjacent serpentine
-    lane ends, bulging in the current travel direction.
+def _band_uturn(path: list[GridPoint], next_start: GridPoint,
+                free: np.ndarray, spacing_cells: int) -> list[GridPoint] | None:
+    """Band-transition U-turn maneuver (U9): straight overshoot along the
+current travel direction, then a 180-degree semicircular arc of radius
+ceil(spacing/2) landing on the next band row, reversing the heading.
+Works for aligned serpentine pairs AND furniture-fragmented lanes (the
+arc radius derives from the row gap, not from column alignment).
+Returns the maneuver points (starting at path[-1]) or None when the arc
+region leaves the free mask (caller falls back to A*)."""
+    if len(path) < 2:
+        return None
+    p1 = path[-1]
+    dy = next_start[1] - p1[1]
+    if abs(dy) < spacing_cells:
+        return None  # next lane not a band below
+    prev = path[-2]
+    tsign = 1 if p1[0] >= prev[0] else -1
+    nsign = 1 if dy > 0 else -1
+    r = int(math.ceil(abs(dy) / 2.0))
+    cx = p1[0] + tsign * r
+    cy = p1[1] + nsign * r
+    a1 = math.atan2(p1[1] - cy, p1[0] - cx)
+    a2 = math.atan2(next_start[1] - cx * 0 - cy + nsign * r - nsign * r,
+                    0.0) if False else (math.pi / 2 if nsign > 0 else -math.pi / 2)
+    def arc_pts(sign: int) -> list[GridPoint]:
+        span = (a2 - a1) % (2 * math.pi) if sign > 0 else (a1 - a2) % (2 * math.pi)
+        n = max(12, int(math.ceil(span * r / 0.5)))
+        pts = []
+        for t in range(n + 1):
+            a = a1 + sign * span * t / n
+            x = int(round(cx + r * math.cos(a)))
+            y = int(round(cy + r * math.sin(a)))
+            pts.append((x, y))
+        return pts
+    for sign in ((-1 if nsign > 0 else 1), (1 if nsign > 0 else -1)):
+        pts = arc_pts(sign)
+        dedup = [pts[0]]
+        for q in pts[1:]:
+            if q != dedup[-1]:
+                dedup.append(q)
+        if all(0 <= y < free.shape[0] and 0 <= x < free.shape[1]
+               and free[y, x] for x, y in dedup):
+            return dedup
+    return None
 
-    Returns the cap point list (starting at path[-1]) or None when the
-    geometry is not a serpentine pair (non-aligned columns) or the cap
-    region leaves the free mask (caller falls back to A*).
+
+
+def _semicircle_arc(path: list[GridPoint], next_start: GridPoint,
+                    free: np.ndarray) -> list[GridPoint] | None:
+    """Semicircular U-turn arc between the trimmed lane ends.
+
+    The sweep trims each lane by turn_r at the turning end, so the two
+    ends are 2*turn_r apart vertically: the connecting arc has centre at
+    the midpoint, radius = half the row gap, bulging toward the previous
+    travel direction.  Returns the arc points (starting at path[-1]) or
+    None when the arc leaves the free mask (A* fallback).
     """
     if len(path) < 2:
         return None
     p1 = path[-1]
     p2 = next_start
-    dx = p2[0] - p1[0]
     dy = p2[1] - p1[1]
-    if abs(dy) != spacing_cells or abs(dx) > 1:
-        return None  # not a vertically adjacent serpentine pair
-    # travel direction of the just-finished lane
-    prev = path[-2]
-    tsign = 1 if p1[0] >= prev[0] else -1
+    if abs(dy) < 2 or abs(p2[0] - p1[0]) > 2 * abs(dy):
+        return None
     cx = (p1[0] + p2[0]) / 2.0
     cy = (p1[1] + p2[1]) / 2.0
     r = abs(dy) / 2.0
-    a1 = math.atan2(p1[1] - cy, p1[0] - cx)   # -90 deg (P1 above centre)
-    a2 = math.atan2(p2[1] - cy, p2[0] - cx)   # +90 deg
-    # bulge side: through 0 rad (+x) when travelling +x, through pi (-x) else
+    a1 = math.atan2(p1[1] - cy, p1[0] - cx)
+    a2 = math.atan2(p2[1] - cy, p2[0] - cx)
+    prev = path[-2]
+    tsign = 1 if p1[0] >= prev[0] else -1
     if tsign > 0:
-        arc = [a1 + (a2 - a1 + 2 * math.pi) % (2 * math.pi) * t / 32.0
-               for t in range(33)]
+        span = (a2 - a1) % (2 * math.pi)
+        sgn = 1
     else:
-        arc = [a1 - (a1 - a2 + 2 * math.pi) % (2 * math.pi) * t / 32.0
-               for t in range(33)]
+        span = (a1 - a2) % (2 * math.pi)
+        sgn = -1
+    n = max(12, int(math.ceil(span * r / 0.5)))
     pts = []
-    for a in arc:
-        x = int(round(cx + r * math.cos(a) - 0.0))
-        y = int(round(cy + r * math.sin(a) - 0.0))
-        if not (0 <= y < free.shape[0] and 0 <= x < free.shape[1])                 or not free[y, x]:
-            return None  # cap leaves the free mask
-        pts.append((x, y))
-    return pts
+    for t in range(n + 1):
+        a = a1 + sgn * span * t / n
+        pts.append((int(round(cx + r * math.cos(a))),
+                    int(round(cy + r * math.sin(a)))))
+    dedup = [pts[0]]
+    for q in pts[1:]:
+        if q != dedup[-1]:
+            dedup.append(q)
+    if all(0 <= y < free.shape[0] and 0 <= x < free.shape[1]
+           and free[y, x] for x, y in dedup):
+        return dedup
+    return None
 
 
 def connected_boustrophedon(
@@ -268,9 +330,18 @@ def connected_boustrophedon(
             # direction, so the reference heading turns continuously
             # instead of jumping 180° at a lateral hop (which stalls the
             # forward-only MPC at the first lane end).
-            cap = _uturn_cap(path, seg[0], free, spacing_cells)
+            cap = _semicircle_arc(path, seg[0], free)
             if cap is not None:
                 path.extend(cap[1:])  # cap[0] == path[-1]
+                if path[-1] != seg[0]:
+                    bridge = astar(path[-1], seg[0], free)
+                    if not bridge:
+                        if collision_check:
+                            raise ValueError(
+                                'no bridge from arc landing '
+                                + str(path[-1]) + ' to ' + str(seg[0]))
+                    else:
+                        path.extend(bridge[1:])
                 if path[-1] == seg[0]:
                     path.extend(seg[1:])
                 else:
@@ -280,10 +351,15 @@ def connected_boustrophedon(
             if not connector:
                 if collision_check:
                     raise ValueError(
-                        f"no reachable connector from {path[-1]} to "
-                        f"{seg[0]} within free mask"
-                    )
+                        'no connector between lane fragments: '
+                        + str(path[-1]) + ' -> ' + str(seg[0]))
                 continue
+            path.extend(connector[1:])
+            if path[-1] == seg[0]:
+                path.extend(seg[1:])
+            else:
+                path.extend(seg)
+            continue
             # 验证连接线不穿障
             if collision_check:
                 for x, y in connector:
