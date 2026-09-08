@@ -1,0 +1,18 @@
+{
+  "_terminal_result": 2,
+  "_gross_coverage": 0.8727272727272727,
+  "_effective_coverage": 0.8727272727272727,
+  "_exempt_ratio": 0.0,
+  "_repeat_ratio": 0.6607792207792208,
+  "_path_length_m": 124.39002231751105,
+  "_duration_s": 756.355,
+  "_segments_total": 37,
+  "_segments_covered": 36,
+  "_segments_exempt": 0,
+  "_segments_failed": 1,
+  "_segments_pending": 0,
+  "_failure_class": "WORK_TRACKING_FAILED",
+  "_task_input_id": "6649dcb8bd86297e",
+  "_plan_id": "2f2c3d0baa26ae2b",
+  "_check_fields": false
+}

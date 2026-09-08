@@ -1,0 +1,18 @@
+{
+  "_terminal_result": 2,
+  "_gross_coverage": 0.8790909090909091,
+  "_effective_coverage": 0.8790909090909091,
+  "_exempt_ratio": 0.0,
+  "_repeat_ratio": 0.6802597402597402,
+  "_path_length_m": 201.37877730834327,
+  "_duration_s": 1004.183,
+  "_segments_total": 37,
+  "_segments_covered": 37,
+  "_segments_exempt": 0,
+  "_segments_failed": 0,
+  "_segments_pending": 0,
+  "_failure_class": "COVERAGE_BELOW_THRESHOLD",
+  "_task_input_id": "6649dcb8bd86297e",
+  "_plan_id": "2f2c3d0baa26ae2b",
+  "_check_fields": false
+}

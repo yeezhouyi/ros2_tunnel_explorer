@@ -530,8 +530,9 @@ Apache-2.0
   无硬实时声明**。
 - **复现边界**:从 tag/默认分支一条命令复现的是**计划与审计工具链**
   (`scripts/regen_plan_from_masks.py`、D 线 `audit_b6_coverage.py` /
-  `audit_b6_triple.py`);原始 bag 与 masks 在本地 `chain_day68/`,
-  **不入库**——原始数据需重跑仿真生成
+  `audit_b6_triple.py`)。masks/计划/审计 JSON 证据集已入库
+  `chain_day68_evidence/`(140 KB);原始 /odom bag(17–23 MB/run)
+  仍为本地不入库——需重跑仿真生成
   (`scripts/run_chain_audit.sh <run_dir> <masks_npz>`)。
 - **样本扩展(post-seal)**:run7/run8 已补跑,6-run 扩展统计
   (r015 均值 0.620,0.476–0.736)见 `docs/day68_chain_audit.md`

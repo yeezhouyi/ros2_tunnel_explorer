@@ -1,0 +1,12 @@
+{
+ "odom_samples": 24172,
+ "driven_length_m": 152.551,
+ "planned_path_length_m": 69.95,
+ "execution_overhead_ratio": 2.181,
+ "known_free_cells": 7860,
+ "executable_cells": 6266,
+ "visited_executable_cells": 1311,
+ "coverage_task": 0.2092,
+ "coverage_known_free": 0.212,
+ "footprint_radius_m": 0.1
+}
