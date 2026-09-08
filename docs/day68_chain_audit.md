@@ -93,11 +93,7 @@ map; python-canonical plan 60.75 m (overhead denominator only).
   direction) -> the r010 gauge UNDER-COUNTS.
 - coverage_task mean: r010 **0.504** (0.452-0.576); r015 **0.628**
   (0.559-0.736).  coverage_known_free r015 mean 0.594.
-- Ceiling: rows spaced 0.30 with half-width 0.15 tile continuously, so
-  r015 approaches the achievable coverage; measured 0.63 mean (margins,
-  caps, one lost segment and repeats keep it below 1).  Report r015 as
-  the coverage figure with the r010 conservative band; never a single
-  run, never either radius alone without the other.
+- Tool width is NOT calibrated in this simulation (planner footprint_radius_m is body inflation for avoidance, a different quantity).  Lane spacing 0.30 m encodes a 0.30 m-wide cleaning-tool design intent: r=0.15 adopts it, r=0.10 is the conservative lower bound.  Both radii reported; coverage figure = r015 (mean 0.628) with the r010 band; margins/caps/repeats keep the measured mean below 1.
 - Earlier stored-shift numbers (0.22-0.26 and the map_saved-era set) were
   gauge artifacts; superseded by this table.
 ## Findings (B3.2 evidence on the canonical tree)

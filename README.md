@@ -487,8 +487,6 @@ Apache-2.0
 
 > 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
 > **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
-> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
-> **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
 
 
 

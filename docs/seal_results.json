@@ -32,7 +32,7 @@
   "planned_m_python_over_served_map": 60.75,
   "served_map": "cleaning_room_rect (static), origin -3.0/-2.0; executable cells 6996; python-canonical route 60.75 m / 22 waypoints",
   "executor_map_digest_plan_id": "6649dcb8... / 2f2c3d0b... (stable across runs; executor-internal)",
-  "audit_tool": "D-line audit_b6_coverage.py @ 85276e3, footprint 0.1 m",
+  "audit_tool": "audit_b6_coverage.py (D-line @ 85276e3) + audit_b6_triple.py (@ fd1f493); run at BOTH footprint radii 0.10 and 0.15; coverage figure is the 0.15 run with the 0.10 run as conservative band (see ceiling).",
   "reproduce": [
    "python3 <tunnel>/scripts/regen_plan_from_masks.py --masks <audit_masks.npz> --outdir <dir>  (python plan reproducibility over a given map)",
    "python3 <D-line>/benchmark_tools/scripts/plan_from_map.py --map-yaml <served map yaml> --outdir <dir>  (gauge masks over the served map)",
@@ -88,7 +88,7 @@
    "max": 22.32,
    "mean": 19.9
   },
-  "ceiling": "rows 0.30 + half-width 0.15 tile continuously; r015 is the coverage figure (mean 0.628), r010 kept as the conservative band; report range + both radii."
+  "ceiling": "Lane spacing 0.30 m encodes a design intent of a 0.30 m-wide cleaning tool; r=0.15 adopts that intent and r=0.10 is the conservative lower bound when it is NOT adopted.  The tool width is NOT calibrated in this simulation (footprint_radius_m in the planner is the body-inflation/avoidance radius, a different quantity, not evidence for the tool width).  Both radii are therefore reported; no single value is taken."
  },
  "mpc_matrix": {
   "tree": "linear_mpc_controller cloud-exploration-20260908",
@@ -124,5 +124,5 @@
   "map_saved-gauge coverage numbers (historical 0.2486/0.2836) are retracted as coverage claims.",
   "U9-era entrance-hysteresis A/B numbers (1/5, 590 s, -45% goals) are NOT reproducible from any committed tree and are excluded from README and resume."
  ],
- "real_path_status": "Day 4-5 outcome: a single-shot MPC over the raw recorded plan is NOT trackable (accepted ~0.63 m, thousands of QP failures; the raw plan violates kinematics - 16/250 points exceed omega_max=2.0, |kappa| up to 31.4).  Chain-level execution is the executor's segment dispatch over the served static map (see coverage_chain).  Any reference entering a tracker must satisfy the omega_violations guard (max|v*kappa|<=omega_max), red on the old profile, green after the v<=omega_max/|kappa| fix (D-line 85276e3).  This status replaces any 'real 69.95 m path progress>=0.95' framing, which is not met by single-shot MPC."
+ "real_path_status": "Day 4-5 outcome: a single-shot MPC over the raw recorded plan is NOT trackable -- STALL at accepted 0.631 m over 201 steps (progress_ratio 0.009) with 157 QP failures (a8_0_alignment.json, D-line @ fd1f493 unchanged); the raw plan violates kinematics (16/250 points exceed omega_max=2.0, |kappa| up to 31.4).  Chain-level execution is the executor's segment dispatch over the served static map (see coverage_chain).  Any reference entering a tracker must satisfy the omega_violations guard (max|v*kappa|<=omega_max), red on the old profile, green after the v<=omega_max/|kappa| fix (D-line 85276e3).  This status replaces any 'real 69.95 m path progress>=0.95' framing, which is not met by single-shot MPC."
 }
