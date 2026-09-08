@@ -27,12 +27,17 @@ which is what run_coverage_benchmark.sh aggregates (R14).
 import argparse
 import json
 import os
+import time
 
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from tunnel_coverage_msgs.action import ExecuteCoverage
+from tunnel_coverage_msgs.msg import CoverageStatus
+
+# CoverageStatus TaskPhase constants (keep in sync with the msg file).
+PHASE_READY_IDLE = 4
 
 
 def _jsonable(value):
@@ -55,10 +60,42 @@ class CoverageGoalClient(Node):
         super().__init__('coverage_goal_client')
         self.client = ActionClient(self, ExecuteCoverage, 'execute_coverage')
         self.resume = resume_path
+        self._phase = -1
+        self._status_sub = self.create_subscription(
+            CoverageStatus, 'coverage/status', self._on_status, 10)
+
+    def _on_status(self, msg):
+        self._phase = int(msg.phase)
+
+    def wait_readiness(self, timeout_s: float = 120.0):
+        """Wait until the executor reports READY_IDLE on /coverage/status.
+
+        The executor REJECTS goals in any phase other than READY_IDLE
+        (startup race: map + AMCL + Nav2 bring-up order is not
+        deterministic).  Polling the phase in-process removes the
+        run-to-run goal-accept nondeterminism and the shell retry loop.
+        """
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout_s:
+            if self._phase == PHASE_READY_IDLE:
+                self.get_logger().info('Executor READY_IDLE (phase=4)')
+                return True
+            if self._phase >= 5 and self._phase <= 12:
+                raise RuntimeError(
+                    'executor task already active (phase=%d)' % self._phase)
+            rclpy.spin_once(self, timeout_sec=0.25)
+        self.get_logger().error(
+            'Executor not READY_IDLE after %.0f s (last phase=%d)' % (
+                timeout_s, self._phase))
+        return False
 
     def run(self, timeout_s: float, max_seconds: float = 0.0):
         if not self.client.wait_for_server(timeout_sec=10.0):
             raise RuntimeError('execute_coverage action server not available')
+        if not self.wait_readiness():
+            raise RuntimeError(
+                'executor never reached READY_IDLE '
+                '(last phase=%d)' % self._phase)
         goal = ExecuteCoverage.Goal()
         goal.resume_checkpoint_path = self.resume or ''
         self.get_logger().info(
