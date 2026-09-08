@@ -286,3 +286,39 @@ this branch; canonical audits under chain_day68/postseal2_triple_rect_s0
 (v1 is the WRONG-masks (b6_chain) variant kept only as a pipeline-
  debugging record; v2 = run9+run10 rect; postseal2_triple_rect_s0 =
 run7+run11 rect).
+
+## Post-seal2 final disposition (review ruling, 2026-09-09 01:55)
+
+All five open items closed.  Verdict table as ruled:
+
+| # | problem | verdict | action |
+|---|---|---|---|
+| 1 | edge segment room0-w18-0 | FIX (root cause) | goal endpoints clamped to valid cells; tolerances NOT relaxed -- done, run11 evidence above |
+| 2 | reverse_link | FIX (planner side) | U-turn driven forward as half-circle cap; tracker reverse semantics is a separate design problem -- done on the D-line branch |
+| 3 | U-cap zero trigger | FIX (same root as 2) | covered by the same batch: the planner-side guard (omega bound + no sustained reverse) rejects any such reference before it reaches the tracker |
+| 4 | AMCL bias (+2.4 pp) | SEAL (do not fix) | recorded as the conclusion |
+| 5 | parity depth | SEAL (do not extend) | recorded as the conclusion |
+
+Sealing criteria, verbatim from the ruling:
+
+- #4 (AMCL bias): it only moves the headline number inside its own
+  confidence band.  Current claim 0.628 (0.559-0.736); removing the
+  bias would land ~0.63 -> ~0.65, still inside the band -- zero
+  headline change, zero marginal value.  Any real localization fix
+  (initial pose / particle count / corridor laser degeneracy) requires
+  a re-run of the full chain with a changed localization config -- a
+  NEW experiment, not a correction.  Recording IS the conclusion.
+  Claiming one could find it costs more than it returns.
+- #5 (parity depth): the layers only deserve deeper parity once they
+  stop sharing one spec; today both languages are pinned by the same
+  docx + the same golden + the same guard -- no independent evolution
+  freedom.  Each layer uses its STRONGEST oracle, not blanket
+  cross-language sibling checks: projection gating (subtle) -> shared
+  golden, bit-exact cross-language; adapter speed completion (small,
+  deterministic) -> guard + parity test; MPC solve (large) -> QP
+  golden (solution vs independently computed ground truth -- a sibling
+  cross-check validates the sibling, a golden validates the truth);
+  integration -> behavioural gates (sandbox/gtest).  Stepwise parity
+  would turn every legitimate algorithm change into a two-sided
+  lockstep file update -- maintenance burden.  Three orthogonal
+  oracles > per-layer lockstep files.
