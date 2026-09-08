@@ -43,6 +43,8 @@ import (missing cleaning_room_rect world/map -> gz died 255 / map_server
 failed -> executor never READY_IDLE -> empty odom bag -> zero audits).
 They are retained under `chain_day68/records/` only as failure artifacts
 and are NOT part of any reported statistic.  Effective set:
+(post-seal extension: run7/run8 added 2026-09-08, see the extension
+section below)
 
 | seq | run id |
 |---|---|
@@ -114,6 +116,46 @@ map; python-canonical plan 60.75 m (overhead denominator only).
 - Tool width is NOT calibrated in this simulation (planner footprint_radius_m is body inflation for avoidance, a different quantity).  Lane spacing 0.30 m encodes a 0.30 m-wide cleaning-tool design intent: r=0.15 adopts it, r=0.10 is the conservative lower bound.  Both radii reported; coverage figure = r015 (mean 0.628) with the r010 band; margins/caps/repeats keep the measured mean below 1.
 - Earlier stored-shift numbers (0.22-0.26 and the map_saved-era set) were
   gauge artifacts; superseded by this table.
+
+## Post-seal sample extension (2026-09-08, review item 3)
+
+Two additional full-chain runs (same script, same masks, same gauge) were
+executed after the seal to strengthen the sample set.  seal_results.json
+(the 4-run sealed set) stays frozen; this section reports the 6-run
+extension.  run7: 36/37, one segment WORK_TRACKING_FAILED (same class as
+run6).  run8: 37/37 clean (fourth clean sample: run_v, run4, run5, run8).
+
+Executor ledger extension:
+
+| run | gross | effective | repeat_ratio | path_m | dur_s | segs | failure_class |
+|---|---|---|---|---|---|---|---|
+| run7 | 0.8727 | 0.8727 | 0.6608 | 124.4 | 756 | 36/37 | WORK_TRACKING_FAILED |
+| run8 | 0.8791 | 0.8791 | 0.6803 | 201.4 | 1004 | 37/37 | COVERAGE_BELOW_THRESHOLD |
+
+6-run effective mean 0.8904, range 0.8727-0.9125 (spread +-2.2 %; the
+sealed 4-run claim 0.886-0.913 / mean 0.8976 is unchanged).
+
+Grid audit extension (same s0 gauge, audit_b6_triple.py, shift (0,0)):
+
+| run | in_mask | cov_task r010 | cov_task r015 | under-credit |
+|---|---|---|---|---|
+| run7 | 0.83 | 0.5846 | 0.7333 | 21 % |
+| run8 | 0.73 | 0.3921 | 0.4757 | 18 % |
+
+6-run means: r010 0.499 (0.392-0.585); r015 0.620 (0.476-0.736).
+run7 is the best r010 sample of the set; run8 is the clean-but-loosest
+run (driven 211.5 m, highest of the set; repeat 0.68) and lands lowest
+on the grid gauge -- consistent with finding 2 (grid sensitive to
+per-run trajectory tightness; ledger stable).  The sealed 4-run figures
+(r015 mean 0.628, 0.559-0.736) remain the delivery claim; the extension
+widens the honest range to 0.476-0.736 without changing any conclusion:
+report the range, never a single run.
+
+Provenance: run7/run8 executed via scripts/run_chain_audit.sh on the
+post-seal tree (@ 3663584); audit_b6_triple.py @ 77fe26c (marking logic
+identical to the sealed @ fd1f493); outputs chain_day68/rect_triple_s0_v3/
+(raw per-run first-pass audits under run7/audit, run8/audit).
+
 ## Findings (B3.2 evidence on the canonical tree)
 
 1. **Ledger ≠ grid**: executor effective ~0.89–0.91 vs grid coverage_task
