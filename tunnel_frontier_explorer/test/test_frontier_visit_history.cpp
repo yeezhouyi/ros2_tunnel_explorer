@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstddef>
-
 #include <gtest/gtest.h>
+
+#include <cstddef>
 
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
 

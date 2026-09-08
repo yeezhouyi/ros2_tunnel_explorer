@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <gtest/gtest.h>
+
+#include <chrono>
 #include <cmath>
 #include <cstddef>
-
-#include <gtest/gtest.h>
-#include <chrono>
 #include <optional>
 
 #include "tunnel_frontier_explorer/entrance_hysteresis.hpp"

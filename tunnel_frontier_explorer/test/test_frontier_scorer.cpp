@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 #include "tunnel_frontier_explorer/frontier_scorer.hpp"
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
