@@ -483,7 +483,10 @@ See [docs/jazzy_compatibility.md](docs/jazzy_compatibility.md) for full details.
 
 Apache-2.0
 
-## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)
+## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
+> **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
+
+
 
 - **cleaning_mode/**:弓形覆盖规划器(障碍膨胀/扫描线分解/A* 连接/
   覆盖规划/路径平滑)+ map_saver PGM/YAML 加载器。测试 16/16 绿。
@@ -495,3 +498,28 @@ Apache-2.0
 - **U7 覆盖率审计**:弦标记 bug 代码级定位→修复(addSweptPath)→
   回归验证(stamped 4700 ≈ odom 重建 4698);exempt 分母(31%)列为
   下一审计对象。全部为 WSL2/Gazebo 仿真结果。
+
+## 清洁覆盖链(合并树,Day 6-8,canonical)
+
+- **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
+  cleaning_mode/test 合一;python boustrophedon 为复现口径)。
+- **完整链 4 次运行**(静态图 cleaning_room_rect + AMCL + Nav2
+  RotationShim/DWB + coverage executor,37 段/次):executor 台账
+  effective **0.886–0.913**(均值 0.898,±1.5%);离线栅格双分母审计
+  `coverage_task` **0.209–0.367**(均值 0.294)、`coverage_known_free`
+  0.212–0.357;实驶 117–173 m vs 计划 69.95 m。**两分母均报、永不对换;
+  栅格口径对 odom→map 对齐敏感,报范围不报单点**。记录:
+  `docs/day68_chain_audit.md`。
+- **语义边界**:executor 内部以 C++ ScanlinePlanner 规划(rect 图上与
+  python 路由几何等价,map digest/plan id 跨 R24 时代逐字一致);python
+  规划器为一条命令复现口径(`scripts/regen_plan_from_masks.py`)。详见
+  `docs/chain_semantics.md`。
+- **启动就绪竞态已修**:客户端进程内等待 `/coverage/status`
+  phase==READY_IDLE 再发 goal(run6 首试即受理)。
+- **控制器边界**:链控制器 = RotationShim + DWB;线性 MPC Nav2 插件
+  (B6B)为独立交付物(沙箱门禁 1 4/4 / 2a 7/7 / 2b 8/8;终端减速负向
+  对照 intact 1.98 m vs 去除后 13.14–13.16 m,Δ11.18 m),**未接入本链、
+  无硬实时声明**。
+- **封板数字**:README results 表与简历均以 `docs/seal_results.json`
+  为唯一来源(机器可读、含复现命令与 SHA);本仓库不含任何 U9 时代
+  不可复现数字。

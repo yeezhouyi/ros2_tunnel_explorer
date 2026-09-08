@@ -1,0 +1,39 @@
+{
+  "_comment": "Seal source of truth (Day 10). README results table and the resume MUST render from this file; regenerate everything with the commands in each entry. Tree: ros2_tunnel_explorer bline-merge-20260908; D-line linear_mpc_controller cloud-exploration-20260908.",
+  "coverage_chain": {
+    "tree": "bline-merge-20260908",
+    "audit_doc": "docs/day68_chain_audit.md",
+    "semantics_doc": "docs/chain_semantics.md",
+    "runs": 4,
+    "executor_effective": {"mean": 0.8976, "min": 0.8858, "max": 0.9125},
+    "executor_repeat_ratio": {"min": 0.62, "max": 0.72},
+    "segments": "36-37/37 covered per run, 0-1 failed",
+    "grid_coverage_task": {"mean": 0.294, "min": 0.2092, "max": 0.3674},
+    "grid_coverage_known_free": {"min": 0.2120, "max": 0.3573},
+    "driven_m": {"min": 117.3, "max": 172.7},
+    "planned_m": 69.95,
+    "map": "cleaning_room_rect (static), digest 6649dcb8..., plan id 2f2c3d0b...",
+    "audit_tool": "D-line audit_b6_coverage.py @ 85276e3, footprint 0.1 m",
+    "reproduce": [
+      "python3 scripts/regen_plan_from_masks.py --masks <audit_masks.npz> --outdir <dir>",
+      "bash scripts/run_chain_audit.sh <run_dir> <audit_masks.npz>"
+    ],
+    "claim": "segment ledger stable (+/-1.5%); grid coverage is alignment-sensitive; report RANGE + both denominators; executor ledger != absolute coverage."
+  },
+  "mpc_matrix": {
+    "tree": "linear_mpc_controller cloud-exploration-20260908",
+    "doc": "results/a8_replay/MATRIX.md",
+    "claim": "3 geometry x 2 v_min x 2 projection modes; failure axis = geometry & v_min, not projection implementation (10/12 cells identical across modes); cap geometry passes at both v_min -> no maneuver-generation layer needed; nocap needs negative velocity; backward needs true reversing.",
+    "real_path_audit": "16/250 plan reference points exceed omega_max=2.0 on the raw u9 plan; fix rule v <= omega_max/|kappa| implemented (D-line 85276e3)."
+  },
+  "b6b_nav2_plugin": {
+    "tree": "linear_mpc_controller cloud-exploration-20260908",
+    "claims": "sandbox gates stage1 4/4, 2a 7/7, 2b 8/8; terminal-clamp negative control intact 1.98 m vs clamp-disabled 13.14-13.16 m (delta 11.18 m); NOT wired into the coverage chain; NO hard-real-time claim."
+  },
+  "boundaries": [
+    "No hard real-time statement is authorized.",
+    "Executor plans internally via C++ ScanlinePlanner; python cleaning_mode is the reproducibility-canonical planner (geometry-equivalent on the rect room only).",
+    "Chain controller = RotationShim + DWB; the linear-MPC plugin is a separate sandbox-verified deliverable.",
+    "U9-era entrance-hysteresis A/B numbers (1/5, 590 s, -45% goals) are NOT reproducible from any committed tree and are excluded from README and resume."
+  ]
+}
