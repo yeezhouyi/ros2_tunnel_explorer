@@ -217,6 +217,7 @@ def connected_boustrophedon(
     spacing_cells: int,
     *,
     collision_check: bool = True,
+    arcs: list | None = None,
 ) -> list[GridPoint]:
     """跨 cell 蛇形连接:每个 cell 内做蛇形,cell 之间用 A* 连接.
 
@@ -224,6 +225,11 @@ def connected_boustrophedon(
         free: 2-D 布尔掩膜
         spacing_cells: 行间距
         collision_check: True 时,若 A* 连接线穿障则抛 ValueError(规划器契约)
+        arcs: 可选输出列表 —— 非 None 时,每次成功插入 U 帽(网格阶梯圆弧)会
+            追加一条元数据 ``dict(start, n, p1, p2)``,其中 ``start`` 是帽在
+            返回路径中的首点下标、``n`` 是帽点数(含首点,``path[start+n-1]``
+            即帽末点)、``p1``/``p2`` 为帽两端栅格坐标。调用方(世界域)据此把
+            阶梯圆弧替换回连续半圆弧 —— 修复"栅格记录圆弧=微之字不可跟踪"。
 
     Raises:
         ValueError: 当 collision_check=True 且 A* 路径上有点不在 free 中。
@@ -270,6 +276,11 @@ def connected_boustrophedon(
             # forward-only MPC at the first lane end).
             cap = _uturn_cap(path, seg[0], free, spacing_cells)
             if cap is not None:
+                if arcs is not None:
+                    p1 = path[-1]
+                    arcs.append(
+                        dict(start=len(path) - 1, n=len(cap),
+                             p1=p1, p2=seg[0]))
                 path.extend(cap[1:])  # cap[0] == path[-1]
                 if path[-1] == seg[0]:
                     path.extend(seg[1:])

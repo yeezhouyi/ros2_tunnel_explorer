@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil
+import math
 
 import numpy as np
 
@@ -39,6 +40,60 @@ class CleaningPlan:
     planned_coverage: float
     path_length_m: float
     reason: str
+
+
+def _apply_world_caps(xy, grid_path, arcs, spec):
+    """Replace grid-staircase U-cap spans with continuous semicircular arcs.
+
+    The planner's U-caps are int-rounded cell samples of a small-radius
+    semicircle; on the world polyline that is a Manhattan staircase whose
+    corners (R~0.03 m) make any smooth tracker reference kinematically
+    infeasible.  Each captured cap (from ``connected_boustrophedon(arcs=)``)
+    spans ``[start, start+n-1]`` in both ``grid_path`` and ``xy``; we drop
+    the staircase interior and splice the analytic arc through the removed
+    midpoint, keeping both endpoints.
+    """
+    if not arcs:
+        return xy
+    res = spec.resolution
+    ox = spec.origin_x
+    oy = spec.origin_y
+    xy = list(xy)
+
+    def wcell(c):
+        return (ox + (c[0] + 0.5) * res, oy + (c[1] + 0.5) * res)
+
+    for m in sorted(arcs, key=lambda a: a["start"], reverse=True):
+        i = m["start"]
+        n = m["n"]
+        if i < 0 or i + n - 1 >= len(xy):
+            continue
+        e1, e2 = i, i + n - 1
+        x1, y1 = xy[e1]
+        x2, y2 = xy[e2]
+        p1, p2 = m["p1"], m["p2"]
+        ccx = (p1[0] + p2[0]) / 2.0
+        ccy = (p1[1] + p2[1]) / 2.0
+        cwx = ox + (ccx + 0.5) * res
+        cwy = oy + (ccy + 0.5) * res
+        r = math.hypot(x2 - x1, y2 - y1) / 2.0
+        if r <= 1e-9:
+            continue
+        a1 = math.atan2(y1 - cwy, x1 - cwx)
+        a2 = math.atan2(y2 - cwy, x2 - cwx)
+        # pick the semicircle side that passes near the removed midpoint
+        mid = wcell(grid_path[(e1 + e2) // 2])
+        am = math.atan2(mid[1] - cwy, mid[0] - cwx)
+        cc = (a2 - a1 + 2.0 * math.pi) % (2.0 * math.pi)
+        d = (am - a1 + math.pi) % (2.0 * math.pi) - math.pi
+        total = cc if d >= 0.0 else -(2.0 * math.pi - cc)
+        steps = max(4, int(round(math.pi * r / res)))
+        pts = []
+        for k in range(1, steps):
+            ang = a1 + total * k / steps
+            pts.append((cwx + r * math.cos(ang), cwy + r * math.sin(ang)))
+        xy[e1 + 1:e2] = pts
+    return xy
 
 
 def make_plan(
@@ -92,10 +147,12 @@ def make_plan(
         )
 
     try:
+        _arcs: list = []
         grid_path = connected_boustrophedon(executable, lane_cells,
-                                            collision_check=True)
+                                            collision_check=True, arcs=_arcs)
     except ValueError:
         grid_path = []
+        _arcs = []
 
     if not grid_path:
         return CleaningPlan(
@@ -116,6 +173,7 @@ def make_plan(
     reachable_count = sum(1 for (x, y) in reached if executable[y, x])
     coverage = reachable_count / denominator if denominator else 0.0
     xy = grid_to_world(grid_path, spec)
+    xy = _apply_world_caps(xy, grid_path, _arcs, spec)
     length = path_length_m(xy)
 
     if coverage < 0.95:
