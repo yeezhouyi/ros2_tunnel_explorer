@@ -36,6 +36,8 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include "tunnel_frontier_explorer/entrance_hysteresis.hpp"
+
 namespace tunnel_frontier_explorer
 {
 

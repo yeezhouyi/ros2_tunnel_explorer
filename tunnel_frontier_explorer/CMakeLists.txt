@@ -23,6 +23,7 @@ add_library(frontier_detection STATIC
   src/frontier_goal_selector.cpp
   src/frontier_scorer.cpp
   src/frontier_visit_history.cpp
+  src/event_log.cpp
 )
 
 target_include_directories(frontier_detection
@@ -132,6 +133,15 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_frontier_visit_history frontier_detection)
   target_include_directories(test_frontier_visit_history PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  # ── EventLog (B7) tests incl. the stable-cluster-id shuffle guard ────
+  ament_add_gtest(test_event_log
+    test/test_event_log.cpp
+  )
+  target_link_libraries(test_event_log frontier_detection)
+  target_include_directories(test_event_log PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 endif()
