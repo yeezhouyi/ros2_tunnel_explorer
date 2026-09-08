@@ -151,6 +151,50 @@ per-run trajectory tightness; ledger stable).  The sealed 4-run figures
 widens the honest range to 0.476-0.736 without changing any conclusion:
 report the range, never a single run.
 
+### Post-seal attributions (same day, follow-up)
+
+1. **Segment failure is one recurring marginal segment, not bag jitter.**
+   run6 and run7 both failed the SAME segment `room0-w18-0`
+   ("reported success but endpoint not reached" -> FAILED after max
+   attempts, class WORK_TRACKING_FAILED).  In both runs the failure is
+   immediately followed by planner_server `worldToMap failed` probes at
+   the top-edge row (my=80 out of size_y=80) -- the segment endpoint
+   sits at the map/top edge where the endpoint self-check tolerance is
+   marginal.  The worldToMap probes appear in every run (580-1420
+   lines) and are benign; the discriminator is which segment exceeds
+   endpoint-check retries.  Per the review ruling this is recorded,
+   not fixed (no new semantics in the seal window).
+2. **run8 (lowest grid, clean 37/37) is a high-speed loose-tracking
+   run, not time waste.**  Odom twist decomposition vs the set:
+   mean speed 0.204 m/s (highest), creep (<0.03 m/s) share 17.9 %
+   (lowest), ZERO in-place rotation, ZERO direction reversals; driven
+   211.5 m (highest) with the highest planner churn (1476 planner_server
+   log lines vs set median ~1176).  Attribution: extra distance comes
+   from high-speed geometric deviation between row waypoints (loose
+   Nav2 tracking / wide detours), endpoints all reached -> ledger
+   unaffected, grid coverage lowest.  Consistent with finding 2.
+3. **Localization-bias contribution is bounded and minor.**  Shift
+   sensitivity over all 6 bags (audit_b6_triple.py, r015): physical
+   shift (0,0) mean 0.6202 (0.476-0.736) vs the +-3 m search-peak shift
+   (+0.45,-0.25) mean 0.6440 (0.531-0.698, spread tightens);
+   in_mask mean 0.768 -> 0.791.  A residual ~0.5 m AMCL-bias-scale
+   offset can add at most ~+2.4 pp (~4 % relative) to the grid mean;
+   the grid-vs-ledger gap is dominated by the denominator definition
+   (endpoint self-check vs absolute area) and the gauge radius, not by
+   localization noise.  The gauge stays at the physical shift (0,0).
+4. **xmllint ctest timeout root cause (environment, recorded).**
+   ament_xmllint parses package.xml's xml-model PI and invokes
+   `xmllint --schema http://download.ros.org/schema/package_format3.xsd`;
+   download.ros.org is unreachable from this WSL2 environment (curl
+   hangs; no proxy pass-through), so the subprocess blocks until the
+   60 s ctest timeout.  Direct `xmllint --noout package.xml` takes 6 ms
+   -- the fetch is the only hang.  Fix (owner-side, one minute with
+   network): download the xsd once, map the URL to the local file via
+   XML_CATALOG_FILES (rewriteURI), export it in ~/.bashrc; or allow
+   download.ros.org through the proxy.  Deliberately NOT worked around
+   in-repo (no fake schema -- that would trade a hang for a false
+   green/red).
+
 Provenance: run7/run8 executed via scripts/run_chain_audit.sh on the
 post-seal tree (@ 3663584); audit_b6_triple.py @ 77fe26c (marking logic
 identical to the sealed @ fd1f493); outputs chain_day68/rect_triple_s0_v3/

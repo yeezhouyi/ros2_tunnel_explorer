@@ -504,31 +504,6 @@ Apache-2.0
 ## 清洁覆盖链(合并树,Day 6-8,canonical)
 
 - **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
-  cleaning_mode/test 合一;python boustrophedon 为复现口径)。
-- **完整链 4 次运行**(静态图 cleaning_room_rect + AMCL + Nav2
-  RotationShim/DWB + coverage executor,37 段/次):executor 台账
-  effective **0.886–0.913**(均值 0.898,±1.5%);离线栅格双分母审计
-  `coverage_task` **0.209–0.367**(均值 0.294)、`coverage_known_free`
-  0.212–0.357;实驶 117–173 m vs 计划 69.95 m。**两分母均报、永不对换;
-  栅格口径对 odom→map 对齐敏感,报范围不报单点**。记录:
-  `docs/day68_chain_audit.md`。
-- **语义边界**:executor 内部以 C++ ScanlinePlanner 规划(rect 图上与
-  python 路由几何等价,map digest/plan id 跨 R24 时代逐字一致);python
-  规划器为一条命令复现口径(`scripts/regen_plan_from_masks.py`)。详见
-  `docs/chain_semantics.md`。
-- **启动就绪竞态已修**:客户端进程内等待 `/coverage/status`
-  phase==READY_IDLE 再发 goal(run6 首试即受理)。
-- **控制器边界**:链控制器 = RotationShim + DWB;线性 MPC Nav2 插件
-  (B6B)为独立交付物(沙箱门禁 1 4/4 / 2a 7/7 / 2b 8/8;终端减速负向
-  对照 intact 1.98 m vs 去除后 13.14–13.16 m,Δ11.18 m),**未接入本链、
-  无硬实时声明**。
-- **封板数字**:README results 表与简历均以 `docs/seal_results.json`
-  为唯一来源(机器可读、含复现命令与 SHA);本仓库不含任何 U9 时代
-  不可复现数字。
-
-## 清洁覆盖链(合并树,Day 6-8,canonical)
-
-- **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
   cleaning_mode/test 合一;python boustrophedon 为**served-map 复现口径**)。
 - **完整链 4 次运行**(仿真图 = 静态 `cleaning_room_rect`,map_server 日志实证;
   AMCL + Nav2 RotationShim/DWB + coverage executor,36–37/37 段):executor
@@ -553,6 +528,14 @@ Apache-2.0
   (B6B)为独立交付物(沙箱门禁 1 4/4 / 2a 7/7 / 2b 8/8;终端减速负向
   对照 intact 1.98 m vs 去除后 13.14–13.16 m,Δ11.18 m),**未接入本链、
   无硬实时声明**。
+- **复现边界**:从 tag/默认分支一条命令复现的是**计划与审计工具链**
+  (`scripts/regen_plan_from_masks.py`、D 线 `audit_b6_coverage.py` /
+  `audit_b6_triple.py`);原始 bag 与 masks 在本地 `chain_day68/`,
+  **不入库**——原始数据需重跑仿真生成
+  (`scripts/run_chain_audit.sh <run_dir> <masks_npz>`)。
+- **样本扩展(post-seal)**:run7/run8 已补跑,6-run 扩展统计
+  (r015 均值 0.620,0.476–0.736)见 `docs/day68_chain_audit.md`
+  扩展段;封板 4-run 数字不变。
 - **封板数字**:README results 表与简历均以 `docs/seal_results.json`
   为唯一来源(机器可读、含复现命令与 SHA);本仓库不含任何 U9 时代
   不可复现数字。
