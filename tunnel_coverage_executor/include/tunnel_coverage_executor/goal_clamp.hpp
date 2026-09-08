@@ -32,7 +32,10 @@ struct GoalClampResult
 };
 
 /// Clamp a goal endpoint into the nearest valid cell of a row-major 0-or-1
-/// mask (reachable-cleanable) sharing the geometry.
+/// mask sharing the geometry.  For goal poses pass navigable_center (cells
+/// whose centre the chassis can occupy); reachable_cleanable would be the
+/// wrong notion -- it is dilated by the tool radius and keeps top-edge
+/// goals Nav2 cannot generate.
 ///
 /// An endpoint whose cell is outside the grid or not set in the mask is moved
 /// to the nearest valid cell centre, keeping at least inset_m distance

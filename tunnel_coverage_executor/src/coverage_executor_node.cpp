@@ -531,11 +531,17 @@ void CoverageExecutorNode::clampSegmentGoals(
   if (!masks_) {
     return;
   }
+  // Validity notion: the goal is a CHASSIS pose, so the cell must be one
+  // the chassis centre can occupy (navigable_center), not merely one the
+  // tool footprint can reach (reachable_cleanable is dilated by the tool
+  // radius and would keep top-edge goals ungeneratable for Nav2 -- run9
+  // evidence: with reachable_cleanable the clamp never fires and the
+  // segment still has to win the endpoint gate by retry luck).
   const auto cs = clampGoalEndpoint(
-    masks_->reachable_cleanable, masks_->geometry,
+    masks_->navigable_center, masks_->geometry,
     seg.start_x, seg.start_y, goal_clamp_inset_m_);
   const auto ce = clampGoalEndpoint(
-    masks_->reachable_cleanable, masks_->geometry,
+    masks_->navigable_center, masks_->geometry,
     seg.end_x, seg.end_y, goal_clamp_inset_m_);
   if (!cs.clamped && !ce.clamped) {
     return;
