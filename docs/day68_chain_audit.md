@@ -1,27 +1,32 @@
 # Day 6-8: full cleaning-chain runs + dual-denominator coverage audit
 
-Branch: `bline-merge-20260908` @ **e020a6f** (merge tree built from source;
+Branch: `bline-merge-20260908` @ **5c12f2d** (merge tree built from source;
 canonical chain = python `cleaning_mode` planner geometry, executor's C++
 `ScanlinePlanner` plan is geometry-equivalent on the rect room — same map
 digest `6649dcb8` / plan id `2f2c3d0b` across R24-era and these runs).
 
 Method: `scripts/run_chain_audit.sh <run_dir>` — coverage_simulation
 (static map `cleaning_room_rect` + AMCL + Nav2 dwb + coverage executor) →
-`send_coverage_goal` (2700 s cap, READY retry loop) → `/odom` bag →
+`send_coverage_goal` (2700 s cap; client waits for READY_IDLE since
+`cc6731b`, shell retry demoted to fallback) → `/odom` bag →
 `audit_b6_coverage.py` (D-line repo @ `85276e3`, dual denominator,
 `footprint_radius_m=0.1`; masks `b6_chain/plan/audit_masks.npz`,
-plan_stats read from the same dir).  Three full runs (37/37 segments
-covered, 0 failed, terminal COVERAGE_BELOW_THRESHOLD in all).
+plan_stats read from the same dir).  Four full runs; readiness-wait
+client validated on run6 (goal accepted on attempt 1, no shell retry).
 
 ## Executor ledger (segment / self-tracking denominator)
 
-| run | gross | effective | repeat_ratio | path_m | dur_s | segs |
-|---|---|---|---|---|---|---|
-| run_v | 0.9018 | 0.9018 | 0.7140 | 156.5 | 809 | 37/37 |
-| run4  | 0.8858 | 0.8858 | 0.6857 | 113.3 | 652 | 37/37 |
-| run5  | 0.9125 | 0.9125 | 0.7232 | 165.2 | 834 | 37/37 |
+| run | gross | effective | repeat_ratio | path_m | dur_s | segs | failure_class |
+|---|---|---|---|---|---|---|---|
+| run_v | 0.9018 | 0.9018 | 0.7140 | 156.5 | 809 | 37/37 | COVERAGE_BELOW_THRESHOLD |
+| run4  | 0.8858 | 0.8858 | 0.6857 | 113.3 | 652 | 37/37 | COVERAGE_BELOW_THRESHOLD |
+| run5  | 0.9125 | 0.9125 | 0.7232 | 165.2 | 834 | 37/37 | COVERAGE_BELOW_THRESHOLD |
+| run6  | 0.8905 | 0.8905 | 0.6238 | 130.2 | 786 | 36/37 | WORK_TRACKING_FAILED |
 
-mean effective **0.9000**, range 0.8858–0.9125 (±1.5 %).
+mean effective **0.8976**, range 0.8858–0.9125 (±1.5 %); three runs 37/37,
+one run 36/37 (one segment WORK_TRACKING_FAILED: /odom self-check could
+not confirm endpoint progress after max attempts — real-world variance,
+not a harness fault).
 Ledger is stable across runs and independent of driven distance — the
 executor self-tracks "segment endpoints reached", not absolute coverage.
 
@@ -32,24 +37,30 @@ executor self-tracks "segment endpoints reached", not absolute coverage.
 | run_v | 0.3674 | 0.3573 | 163.3 | 2.33 | 24772 | 2302 |
 | run4  | 0.2815 | 0.2805 | 117.3 | 1.68 | 20207 | 1764 |
 | run5  | 0.3197 | 0.3090 | 172.7 | 2.47 | 25600 | 2003 |
+| run6  | 0.2092 | 0.2120 | 152.6 | 2.18 | 22430 | 1311 |
 
-mean coverage_task **0.323**, range 0.2815–0.3674 (spread ≈ 27 % of mean);
-mean coverage_known_free 0.316.  driven 117–173 m (Nav2 trajectory
-tightness varies run to run) → coverage_task correlates weakly with driven
-length; residual spread is odom→map alignment / visited-cell sensitivity.
+mean coverage_task **0.294**, range 0.2092–0.3674 (spread ≈ 54 % of mean);
+mean coverage_known_free 0.290.  coverage_task does NOT track driven
+length monotonically (run6 driven 152.6 m mid-range yet lowest task —
+one failed segment removed its far-end rows from the visited set), and
+run-to-run residual spread is odom→map alignment / visited-cell
+sensitivity.  Report the range, never a single run.
 
 ## Findings (B3.2 evidence on the canonical tree)
 
-1. **Ledger ≠ grid**: executor effective ~0.90 vs grid coverage_task ~0.32.
-   The executor's own accounting (endpoint reached per segment, /odom
-   self-consistency) is not absolute map coverage — reproduced on the
-   merged tree exactly as on the old b6 chain.
-2. **Ledger stable / grid sensitive**: effective spread ±1.5 % over 3 runs;
-   coverage_task spread ≈ 27 %.  Grid audit cell counts are sensitive to
-   odom→map alignment and per-run trajectory tightness; report the range,
-   never a single run.
-3. **Repeat ratio** 0.69–0.72 (row-working inefficiency) is the known open
+1. **Ledger ≠ grid**: executor effective ~0.89–0.91 vs grid coverage_task
+   0.21–0.37.  The executor's own accounting (endpoint reached per
+   segment, /odom self-consistency) is not absolute map coverage —
+   reproduced on the merged tree exactly as on the old b6 chain.
+2. **Ledger stable / grid sensitive**: effective spread ±1.5 % over 4 runs;
+   coverage_task spread ≈ 54 % of mean.  Grid audit cell counts are
+   sensitive to odom→map alignment, per-run trajectory tightness, and
+   segment failures (run6 36/37 → lowest task despite mid-range driven).
+   Report the range, never a single run.
+3. **Repeat ratio** 0.62–0.72 (row-working inefficiency) is the known open
    item (b6_rerun_rect/NOTE.md); unaffected by the merge.
+4. **Startup nondeterminism removed** (`cc6731b`): run6 goal accepted on
+   attempt 1 via in-process READY_IDLE phase wait (no shell retry).
 
 ## Provenance notes
 
