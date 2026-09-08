@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# NOTE (canonical): superseded for the coverage-chain seal by
+# audit_b6_coverage.py (linear_mpc_controller @ 85276e3) and
+# audit_b6_triple.py (@ fd1f493).  This U7-era tool is kept for
+# historical artifacts only -- its numbers used the map_saved gauge,
+# which is retracted (see docs/seal_results.json._gauge).
 """U7 coverage audit (offline, from rosbag).
 
 Reconstructs from the recorded bag:

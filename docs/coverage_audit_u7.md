@@ -1,3 +1,9 @@
+> **RETRACTED as a delivery figure.** These U7-era coverage numbers
+> were computed with the `map_saved` gauge; every coverage-chain run
+> served the STATIC map `cleaning_room_rect` (map_server logs).
+> Canonical numbers: `docs/seal_results.json` @ `bline-seal-20260908`
+> (see `docs/day68_chain_audit.md` § GAUGE CORRECTION).
+
 # U7 覆盖率审计(2026-09-06,本地干净运行)
 
 运行:U6 无 checkpoint 单次连续运行,时钟源 hyperv_clocksource_tsc_page,

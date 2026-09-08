@@ -15,7 +15,25 @@ cells, python-canonical plan 60.75 m / 22 waypoints on that map).
 Executor-ledger numbers are executor-internal (frame-independent) and
 are unaffected.
 
+  Artifacts under `artifacts/coverage_clean/` carry the same retracted
+  gauge and must not be quoted (that directory is gitignored; the
+  retraction lives here so it is version-controlled).
+
 # Day 6-8: full cleaning-chain runs + dual-denominator coverage audit
+
+## Why r010 sits near 0.50 (structural, not scatter)
+
+The r010-vs-r015 gap is a gauge artefact of the tool half-width, not
+run-to-run noise.  With lane spacing 0.30 m a disc of radius 0.10 m
+sweeps a 0.20 m-wide strip, leaving a 0.10 m inter-row gap: the
+structural ceiling is ~0.20/0.30 = 66.7 % of each row band even for a
+perfect row pass, and measured r010 lands at 0.452-0.576 (mean 0.504)
+once margins/caps are counted.  r015 (adopting the 0.30 m tool-width
+design intent) removes the gap -> 0.559-0.736 (mean 0.628).  Measured
+under-credit of r010 vs r015 union: 18-22 % (mean 19.9 %), matching the
+16 % estimate.  This is why both radii are reported and r015 is the
+coverage figure: r010 cannot exceed its geometric ceiling no matter how
+well the chain executes.
 
 ## Run naming
 
