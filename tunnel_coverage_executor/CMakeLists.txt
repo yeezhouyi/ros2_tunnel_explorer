@@ -22,6 +22,7 @@ find_package(tunnel_coverage_msgs REQUIRED)
 add_library(coverage_executor_core STATIC
   src/checkpoint_store.cpp
   src/coverage_task_core.cpp
+  src/goal_clamp.cpp
 )
 
 target_include_directories(coverage_executor_core
@@ -95,6 +96,14 @@ if(BUILD_TESTING)
   target_link_libraries(test_checkpoint_store coverage_executor_core)
   target_include_directories(test_checkpoint_store PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_goal_clamp
+    test/test_goal_clamp.cpp
+  )
+  target_link_libraries(test_goal_clamp coverage_executor_core)
+  target_include_directories(test_goal_clamp PRIVATE
+    $<BUILD_INTERFACE://include>
   )
 
   ament_add_gtest(test_task_core

@@ -27,6 +27,8 @@
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
+
+#include "tunnel_coverage_executor/goal_clamp.hpp"
 #include <rclcpp_action/rclcpp_action.hpp>
 
 namespace tunnel_coverage_executor
@@ -60,6 +62,11 @@ CoverageExecutorNode::CoverageExecutorNode()
   max_tf_age_s_ = declare_parameter<double>("max_tf_age_s", 1.0);
   endpoint_tolerance_m_ = declare_parameter<double>(
     "endpoint_tolerance_m", 0.15);
+  // Post-seal2 ruling: goal endpoints that fall off the valid region are
+  // clamped at the source (footprint radius + one safety cell), never
+  // covered up by relaxing the endpoint self-check tolerance.
+  goal_clamp_inset_m_ = declare_parameter<double>(
+    "goal_clamp_inset_m", 0.10);
   stop_velocity_threshold_ = declare_parameter<double>(
     "stop_velocity_threshold_mps", 0.05);
   stop_confirm_timeout_s_ = declare_parameter<double>(
@@ -452,7 +459,9 @@ void CoverageExecutorNode::sendNextSegment()
     return;
   }
 
-  const auto & seg = plan_->segments[static_cast<std::size_t>(idx)];
+  auto & seg_mutable = plan_->segments[static_cast<std::size_t>(idx)];
+  clampSegmentGoals(seg_mutable);
+  const auto & seg = seg_mutable;
   if (idx != exec_index_) {
     exec_index_ = idx;
     exec_attempt_ = 0;  // fresh attempts for a new segment
@@ -514,6 +523,34 @@ void CoverageExecutorNode::tickExecution()
   if (!child_sent_) {
     sendNextSegment();
   }
+}
+
+void CoverageExecutorNode::clampSegmentGoals(
+  tunnel_coverage_planner::CoverageSegment & seg)
+{
+  if (!masks_) {
+    return;
+  }
+  const auto cs = clampGoalEndpoint(
+    masks_->reachable_cleanable, masks_->geometry,
+    seg.start_x, seg.start_y, goal_clamp_inset_m_);
+  const auto ce = clampGoalEndpoint(
+    masks_->reachable_cleanable, masks_->geometry,
+    seg.end_x, seg.end_y, goal_clamp_inset_m_);
+  if (!cs.clamped && !ce.clamped) {
+    return;
+  }
+  RCLCPP_WARN(
+    get_logger(),
+    "Goal endpoint not on a valid cell -- clamped at source "
+    "(segment %s: start %.3f,%.3f -> %.3f,%.3f, end %.3f,%.3f -> "
+    "%.3f,%.3f; inset %.2f m; tolerances unchanged)",
+    seg.id.c_str(), seg.start_x, seg.start_y, cs.x, cs.y,
+    seg.end_x, seg.end_y, ce.x, ce.y, goal_clamp_inset_m_);
+  seg.start_x = cs.x;
+  seg.start_y = cs.y;
+  seg.end_x = ce.x;
+  seg.end_y = ce.y;
 }
 
 void CoverageExecutorNode::processOutcome(int idx, bool ok)

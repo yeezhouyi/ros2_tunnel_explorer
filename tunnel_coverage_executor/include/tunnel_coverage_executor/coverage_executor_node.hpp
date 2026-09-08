@@ -109,6 +109,8 @@ private:
   std::string base_frame_;
   double max_tf_age_s_;
   double endpoint_tolerance_m_;
+  /// Distance kept from the valid-region edge when clamping goal endpoints.
+  double goal_clamp_inset_m_ = 0.10;
   double stop_velocity_threshold_;
   double stop_confirm_timeout_s_;
   double min_effective_coverage_;
@@ -191,6 +193,10 @@ private:
   void tickReadiness();
   void tickExecution();
   void tickCancelling();
+  /// Post-seal2: clamp segment goal endpoints onto valid cells at the
+  /// source (before any child goal is generated).  No-op on valid goals;
+  /// logs and mutates in place otherwise.  Tolerances are never relaxed.
+  void clampSegmentGoals(tunnel_coverage_planner::CoverageSegment & seg);
   void sendNavigate(const tunnel_coverage_planner::CoverageSegment & seg);
   void sendFollow(const tunnel_coverage_planner::CoverageSegment & seg);
   void saveCheckpoint(const std::string & reason);
