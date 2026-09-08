@@ -225,3 +225,64 @@ identical to the sealed @ fd1f493); outputs chain_day68/rect_triple_s0_v3/
   plan id with all runs (incl. R24-era): inputs are aligned.
 - Audit numbers are NOT gate-thresholded here; Day 9/10 decides the seal
   claim against this JSON set.
+
+
+## Post-seal2: planner-side feasibility batch (2026-09-09)
+
+Ruling implemented on branch postseal2-planner-feasibility-20260909
+(commits 1/1b/1c above + the D-line guard/cap batch).  Seal tags
+untouched; all numbers below are NEW runs, the sealed 6-run set is
+unchanged.
+
+1. **room0-w18-0 root fix: goal endpoints clamped at the executor.**
+   clampGoalEndpoint() enforces the ruling inset (goal_clamp_inset_m,
+   0.10 m = footprint radius + one safety cell) on every dispatched
+   segment endpoint against the navigable_center mask bounding box;
+   endpoints closer to the edge than the inset -- or off the grid
+   entirely -- are pulled into the inset window and snapped to the
+   nearest valid cell centre.  Tolerances untouched
+   (min_goal_distance_meters / xy_goal_tolerance guardrails intact).
+   Two honest corrections made on live evidence: validity must be
+   navigable_center (chassis-occupiable), not reachable_cleanable
+   (tool-dilated -- with it the clamp never fires, run9), and the inset
+   window must apply to VALID-but-near-edge endpoints too, because the
+   top-edge goals are in-mask yet ungeneratable for Nav2 once footprint
+   inflation applies (run10).  run11: 23 clamps fired, including
+   room0-w18-0 (y = +-1.525 -> +-1.475); the segment completed via the
+   normal nav fallback (FollowPath -> NavigateToPose) and the task
+   finished 37/37 COVERED with ZERO failed segments -- the structural
+   room0-w18-0 failure (WORK_TRACKING_FAILED after max attempts in
+   run6+run7) is gone.  The remaining single FollowPath retry on that
+   wall-adjacent row is a DWB tracking matter, not goal generation;
+   recorded, not chased.
+2. **Post-seal2 canonical numbers (audit_b6_triple.py @ 77fe26c,
+   rect masks chain_day68/rect_plan/audit_masks.npz, physical shift
+   (0,0); pipeline reproduced the sealed run7 figures exactly --
+   r010 0.5846 / r015 0.7333):**
+
+   | run | clamp state | r010 | r015 | in_mask | ledger effective |
+   |---|---|---|---|---|---|
+   | run9 | inactive (validity-mask bug, kept as evidence) | 0.4697 | 0.5838 | 0.5896 | (run-dir audit only) |
+   | run10 | inactive (invalid-only semantics, kept as evidence) | 0.4624 | 0.5459 | 0.8966 | 0.8913 |
+   | run11 | ACTIVE (23 clamps, w18-0 completes) | 0.4610 | 0.5710 | 0.6937 | 0.8973 |
+
+   All three r015 values sit inside the sealed 6-run honest range
+   [0.476, 0.736] (mean 0.620): no regression signal, and the run-level
+   spread stays wide exactly as finding 2 says -- report the range,
+   never a single run.  The clamp shortens row ends by ~0.05 m per
+   side; the cost is within run-to-run noise.
+
+3. **D-line (same ruling, items 2+3):** reverse_link connector retired
+   (forward half-circle cap instead), reference_guard.py added as the
+   single planner-side gate (omega bound + no sustained reverse);
+   a8_backward matrix cells moved STALL -> COMPLETED (progress 0.9958,
+   qp_failures 78/26/4 -> 0) with cap/nocap reproducing the sealed
+   numbers byte-identically.  Evidence: linear_mpc_controller
+   results/a8_replay/POSTSEAL2.md + postseal2_matrix/ (branch
+   postseal2-planner-feasibility-20260909).
+
+Provenance: run9/run10/run11 executed via scripts/run_chain_audit.sh on
+this branch; canonical audits under chain_day68/postseal2_triple_rect_s0
+(v1 is the WRONG-masks (b6_chain) variant kept only as a pipeline-
+ debugging record; v2 = run9+run10 rect; postseal2_triple_rect_s0 =
+run7+run11 rect).
