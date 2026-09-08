@@ -17,6 +17,24 @@ are unaffected.
 
 # Day 6-8: full cleaning-chain runs + dual-denominator coverage audit
 
+## Run naming
+
+The valid sample set is FOUR runs: run_v (validation) and run4/run5/run6.
+run1/run2/run3 were the first batch ABORTED before the tunnel_worlds asset
+import (missing cleaning_room_rect world/map -> gz died 255 / map_server
+failed -> executor never READY_IDLE -> empty odom bag -> zero audits).
+They are retained under `chain_day68/records/` only as failure artifacts
+and are NOT part of any reported statistic.  Effective set:
+
+| seq | run id |
+|---|---|
+| 1 | run_v |
+| 2 | run4 |
+| 3 | run5 |
+| 4 | run6 |
+
+
+
 Branch: `bline-merge-20260908` @ **492dd0a** (merge tree built from source).
 The executor plans internally (C++ `ScanlinePlanner` over the frozen static
 map it is served) and reports the same task_input_id (map digest `6649dcb8`)
