@@ -107,6 +107,21 @@ TEST(GoalClamp, TopEdgeEndpointClampedWithInset)
   EXPECT_NEAR(r.x, 1.5, kRes);
 }
 
+TEST(GoalClamp, ValidButNearEdgeEndpointPulledToInset)
+{
+  const GridMap map = makeMap();
+  const GridGeometry geo(map);
+  const auto mask = makeMask(map);
+  // (1.5, 1.96) sits on row 78 -- a VALID cell -- but only 0.015 m below
+  // the mask top edge (1.975): Nav2 cannot generate such a goal once the
+  // footprint/lethal inflation applies (the room0-w18-0 signature).  The
+  // inset window must pull it in regardless of cell validity.
+  const auto r = clampGoalEndpoint(mask, geo, 1.5, 1.96, kInset);
+  ASSERT_TRUE(r.clamped);
+  EXPECT_TRUE(cellValid(mask, geo, r.x, r.y));
+  EXPECT_LE(r.y, 1.975 - kInset + 1e-9);
+}
+
 TEST(GoalClamp, FullyOutsideGridClamped)
 {
   const GridMap map = makeMap();

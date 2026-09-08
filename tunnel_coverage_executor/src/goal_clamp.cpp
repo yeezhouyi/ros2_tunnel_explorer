@@ -37,13 +37,6 @@ GoalClampResult clampGoalEndpoint(
     return out;  // nothing to clamp against -- leave the goal untouched
   }
 
-  tunnel_map_core::GridCell cell;
-  const bool valid_now = geometry.worldToGridCell({x, y}, cell) &&
-    mask[static_cast<std::size_t>(cell.row) * static_cast<std::size_t>(w) +
-      static_cast<std::size_t>(cell.col)] != 0;
-  if (valid_now) {
-    return out;  // already on a valid cell -- guard never touches it
-  }
 
   // Bounding box of the valid region, in world coordinates.
   int min_row = -1, max_row = -1, min_col = -1, max_col = -1;
@@ -83,6 +76,18 @@ GoalClampResult clampGoalEndpoint(
 
   const double cx = std::clamp(x, cx_lo, cx_hi);
   const double cy = std::clamp(y, cy_lo, cy_hi);
+  // Inset-window semantics (post-seal2 ruling: the clamp inset must hold
+  // for every goal, not only for endpoints on invalid cells -- a goal that
+  // is in-mask but closer than the inset to the region edge can still be
+  // ungeneratable for Nav2 once the footprint/lethal inflation is applied,
+  // which is exactly the room0-w18-0 top-edge signature).
+  tunnel_map_core::GridCell cell;
+  const bool valid_now = geometry.worldToGridCell({x, y}, cell) &&
+    mask[static_cast<std::size_t>(cell.row) * static_cast<std::size_t>(w) +
+      static_cast<std::size_t>(cell.col)] != 0;
+  if (valid_now && cx == x && cy == y) {
+    return out;  // on a valid cell and already inside the inset window
+  }
 
   // Snap to the nearest valid cell centre (the mask may be concave, so the
   // clamped point can still sit on a masked-out cell).  Centres inside the
