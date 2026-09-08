@@ -1,0 +1,20 @@
+# Deterministic initial poses per benchmark world (map frame).
+# The coverage launch passes x_pose/y_pose/yaw to the robot spawner; the
+# planner uses the same pose as the coverage seed.
+profiles:
+  cleaning_room_rect:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  cleaning_room_pillar:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  cleaning_room_l_shape:
+    x: 1.0
+    y: 0.0
+    yaw: 0.0
+  cleaning_room_doorway:
+    x: -1.5
+    y: 0.0
+    yaw: 0.0
