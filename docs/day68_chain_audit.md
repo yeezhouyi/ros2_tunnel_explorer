@@ -69,31 +69,37 @@ not a harness fault).
 Ledger is stable across runs and independent of driven distance — the
 executor self-tracks "segment endpoints reached", not absolute coverage.
 
-## Offline grid audit (served-map gauge; both reported, never swapped)
+## Offline grid audit (shift-corrected, both radii; never single)
 
-Gauge: `plan_from_map.py --map-yaml cleaning_room_rect.yaml` (the map the
-sim served) -> audit_masks.npz: executable 6996 cells, ox/oy=-3.0/-2.0,
-python-canonical plan 60.75 m / 22 waypoints (plan_stats in the same
-dir).  Audit tool: D-line `audit_b6_coverage.py` @ 85276e3,
-footprint_radius_m=0.1.
+GAUGE correction 2 (shift): the audit shift stored by plan_from_map is
+the python plan's first waypoint (-2.625,-1.375), but the robot's odom
+origin in map frame is its spawn pose (0,0) (initial_poses.yaml profile
+cleaning_room_rect; odom starts at spawn).  All runs used shift (0,0) ->
+odom->map identity.  A +-3 m cell-shift search peaks at (+0.45,-0.25)
+(AMCL-bias scale); we report the physical frame shift (0,0) and note the
+residual as localization bias.  Executable 6996 cells over the served
+map; python-canonical plan 60.75 m (overhead denominator only).
 
-| run | coverage_task | coverage_known_free | driven_m | overhead(vs 60.75) | visited_exec |
+| run | in_mask | cov_task r010 | cov_task r015 | cov_known_free r015 | union r010/r015 under-credit |
 |---|---|---|---|---|---|
-| run_v | 0.2613 | 0.2569 | 163.3 | 2.69 | 1828/6996 |
-| run4  | 0.2453 | 0.2377 | 117.3 | 1.93 | 1716/6996 |
-| run5  | 0.2220 | 0.2151 | 172.7 | 2.84 | 1553/6996 |
-| run6  | 0.2214 | 0.2191 | 152.6 | 2.51 | 1549/6996 |
+| run_v | 0.64 | 0.4521 | 0.5587 | 0.5366 | 20 % |
+| run4  | 0.82 | 0.5319 | 0.6507 | 0.6114 | 18 % |
+| run5  | 0.66 | 0.4578 | 0.5666 | 0.5432 | 19 % |
+| run6  | 0.94 | 0.5756 | 0.7364 | 0.6855 | 22 % |
 
-mean coverage_task **0.2375**, range 0.2214-0.2613 (spread +/-8 % of mean);
-mean coverage_known_free 0.2322.  Grid coverage is still sensitive to
-per-run trajectory tightness (driven 117-173 m) and alignment; report the
-range, never a single run.  NOTE: the 37-segment route the executor
-actually plans (C++ builder over the same static map) is NOT identical to
-the python-canonical plan; the grid metric gauges map-area coverage of
-the driven path against the map-derived executable mask -- it is not a
-plan-trace comparison, and the python planned length (60.75 m) is used
-only as the reproducibility-canonical overhead denominator.
-
+- odom samples inside the executable mask: 0.64-0.94 (mean 0.76).
+- footprint r010 vs r015 (half the 0.30 lane spacing = seamless strip):
+  union under-credit 18-22 % (reviewer's 16 % estimate confirmed in
+  direction) -> the r010 gauge UNDER-COUNTS.
+- coverage_task mean: r010 **0.504** (0.452-0.576); r015 **0.628**
+  (0.559-0.736).  coverage_known_free r015 mean 0.594.
+- Ceiling: rows spaced 0.30 with half-width 0.15 tile continuously, so
+  r015 approaches the achievable coverage; measured 0.63 mean (margins,
+  caps, one lost segment and repeats keep it below 1).  Report r015 as
+  the coverage figure with the r010 conservative band; never a single
+  run, never either radius alone without the other.
+- Earlier stored-shift numbers (0.22-0.26 and the map_saved-era set) were
+  gauge artifacts; superseded by this table.
 ## Findings (B3.2 evidence on the canonical tree)
 
 1. **Ledger ≠ grid**: executor effective ~0.89–0.91 vs grid coverage_task
