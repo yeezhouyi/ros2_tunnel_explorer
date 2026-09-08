@@ -535,11 +535,14 @@ Apache-2.0
 - **完整链 4 次运行**(仿真图 = 静态 `cleaning_room_rect`,map_server 日志实证;
   AMCL + Nav2 RotationShim/DWB + coverage executor,36–37/37 段):executor
   台账 effective **0.886–0.913**(均值 0.898,±1.5%,executor 内部口径);
-  离线栅格双分母审计(coverage gauge = 同图 plan_from_map masks,
-  executable 6996 格):`coverage_task` **0.221–0.261**(均值 0.238)、
-  `coverage_known_free` 0.215–0.257;实驶 117–173 m vs python-canonical
-  计划 60.75 m。**两分母均报、永不对换;栅格口径对轨迹紧度/对齐敏感,
-  报范围不报单点**。记录:`docs/day68_chain_audit.md`。
+  离线栅格审计(coverage gauge = 同图 plan_from_map masks,executable
+  6996 格;odom 原点 = spawn (0,0),shift 已实证):odom 采样在掩膜内
+  比例 0.64–0.94;`coverage_task` footprint **0.10: 0.452–0.576**(均值
+  0.504)、**0.15(= 行距 0.30 一半,无缝): 0.559–0.736**(均值 0.628,
+  封面口径);`coverage_known_free`@0.15 0.537–0.686;0.10 相对 0.15
+  少记 18–22%。实驶 117–173 m vs python-canonical 计划 60.75 m。
+  **两半径均报、r015 为封面数、r010 为保守带;永不对换分母,报范围
+  不报单点**。记录:`docs/day68_chain_audit.md`。
 - **量具修正(重要)**:仿真从未使用 `b6_chain/map_saved.yaml`(SLAM 图,
   origin −2.947/−3.665);早期以 map_saved masks 计的栅格数
   (历史 0.2486/0.2836 与首版 day68 0.209–0.367)为**帧错位产物,已撤回**。
