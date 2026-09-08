@@ -483,7 +483,11 @@ See [docs/jazzy_compatibility.md](docs/jazzy_compatibility.md) for full details.
 
 Apache-2.0
 
-## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
+## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)
+
+> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
+> **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
+> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
 > **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
 
 
@@ -514,6 +518,34 @@ Apache-2.0
   python 路由几何等价,map digest/plan id 跨 R24 时代逐字一致);python
   规划器为一条命令复现口径(`scripts/regen_plan_from_masks.py`)。详见
   `docs/chain_semantics.md`。
+- **启动就绪竞态已修**:客户端进程内等待 `/coverage/status`
+  phase==READY_IDLE 再发 goal(run6 首试即受理)。
+- **控制器边界**:链控制器 = RotationShim + DWB;线性 MPC Nav2 插件
+  (B6B)为独立交付物(沙箱门禁 1 4/4 / 2a 7/7 / 2b 8/8;终端减速负向
+  对照 intact 1.98 m vs 去除后 13.14–13.16 m,Δ11.18 m),**未接入本链、
+  无硬实时声明**。
+- **封板数字**:README results 表与简历均以 `docs/seal_results.json`
+  为唯一来源(机器可读、含复现命令与 SHA);本仓库不含任何 U9 时代
+  不可复现数字。
+
+## 清洁覆盖链(合并树,Day 6-8,canonical)
+
+- **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
+  cleaning_mode/test 合一;python boustrophedon 为**served-map 复现口径**)。
+- **完整链 4 次运行**(仿真图 = 静态 `cleaning_room_rect`,map_server 日志实证;
+  AMCL + Nav2 RotationShim/DWB + coverage executor,36–37/37 段):executor
+  台账 effective **0.886–0.913**(均值 0.898,±1.5%,executor 内部口径);
+  离线栅格双分母审计(coverage gauge = 同图 plan_from_map masks,
+  executable 6996 格):`coverage_task` **0.221–0.261**(均值 0.238)、
+  `coverage_known_free` 0.215–0.257;实驶 117–173 m vs python-canonical
+  计划 60.75 m。**两分母均报、永不对换;栅格口径对轨迹紧度/对齐敏感,
+  报范围不报单点**。记录:`docs/day68_chain_audit.md`。
+- **量具修正(重要)**:仿真从未使用 `b6_chain/map_saved.yaml`(SLAM 图,
+  origin −2.947/−3.665);早期以 map_saved masks 计的栅格数
+  (历史 0.2486/0.2836 与首版 day68 0.209–0.367)为**帧错位产物,已撤回**。
+  executor 内部 C++ ScanlinePlanner 规划的段结构 ≠ python 路由
+  (python 在该图 = 60.75 m/22 点),栅格指标是驱动路径对图域 executable
+  mask 的面积覆盖,非 plan-trace 比对。详见 `docs/chain_semantics.md`。
 - **启动就绪竞态已修**:客户端进程内等待 `/coverage/status`
   phase==READY_IDLE 再发 goal(run6 首试即受理)。
 - **控制器边界**:链控制器 = RotationShim + DWB;线性 MPC Nav2 插件

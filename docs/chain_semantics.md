@@ -6,16 +6,20 @@ Reference: merge tree `bline-merge-20260908`; audit record
 ## 1. Which planner produced the executed route?
 
 The coverage executor (`tunnel_coverage_executor`) plans internally with
-`tunnel_coverage_planner::ScanlinePlanner` over the frozen static map; it
-does NOT ingest the python `cleaning_mode` route at runtime.  The python
-planner is canonical for the PLAN REPRODUCIBILITY chain (seal: one command
-regenerates `cleaning_path.json` = 250 waypoints / 69.95 m from
-`audit_masks.npz`).  On the rect room the two boustrophedon routes are
-geometry-equivalent: every run reports the same `task_input_id`
-(map digest `6649dcb8...`) and `plan_id` (`2f2c3d0b...`) as the R24-era
-runs, and the grid audit planned-length denominator (69.95 m) comes from
-the python `plan_stats.json`.  On other maps (pillar/L/doorway cells) the
-equivalence is NOT guaranteed — do not assume it off the rect room.
+`tunnel_coverage_planner::ScanlinePlanner` over the frozen static map it
+is served; it does NOT ingest the python `cleaning_mode` route at
+runtime.  All Day 6-8 and historical sim runs served the STATIC map
+`cleaning_room_rect.yaml` (map_server 'Loading yaml file' lines verify
+this).  Python `cleaning_mode` is canonical ONLY for the plan
+reproducibility chain, and it must be run over the SERVED map: over
+cleaning_room_rect it yields a 60.75 m / 22-waypoint route (reproducible
+with `plan_from_map.py --map-yaml cleaning_room_rect.yaml`).  It is NOT
+route-identical to the executor's internal C++ segments (do not assume
+equivalence on any map).  An earlier note that the executed route was
+geometry-equivalent to a 69.95 m python plan is RETRACTED: 69.95 m /
+250 waypoints / executable 6266 was `plan_from_map` over
+`b6_chain/map_saved.yaml` (a SLAM map, different origin), which no sim
+run served.
 
 ## 2. Two denominators, never swapped (B3 / R10)
 
