@@ -20,7 +20,7 @@
 | repo_dirty | 启动时 git status --porcelain 非空 | 0/1;dirty 时附 diff_sha |
 | diff_sha | dirty 时 git diff \| sha256sum | 干净时留空(整行仍定长,用空串) |
 | config_hash | 见 §4 | 已解析参数,非 yaml |
-| map_digest | 见 §5 | 标注取样时刻 |
+| map_digest | 见 §5 | **每行**带该行所在检测周期的地图摘要(非一次 run 一个) |
 | seed | 运行参数(launch 注入) | 0..4 |
 | t | 事件时刻 sim/墙钟秒 | 单调;heartbeat 行=周期序号×period |
 | frontier_count_open | 本周期 detector_.detect() 返回簇数(node ~285) | 含被 blacklist 抑制的 |
@@ -30,6 +30,8 @@
 | goal_x / goal_y | 发往 Nav2 的 goal 世界坐标(safe_goal_pt, ~623-624) | frontier goal 用投影后安全点;recovery probe 用探针点;heartbeat 行为空 |
 | action | 见 §6 | 受控词表 |
 | nav2_result | goalResponseCallback / resultCallback 结果 | 受控词表 |
+| nav2_error_code | resultCallback result->error_code | 无错误填 -1;aborted 时填 Nav2 码 |
+| event_detail | 事件附注(自由文本) | 默认空;reject 行填抑制原因词 |
 | robot_x / robot_y | 本周期 getRobotPose() 结果(~277) | heartbeat 与事件行都带 |
 | readiness_status | 见 §7 | 受控词表 |
 
@@ -62,12 +64,18 @@
   整串 sha256 前 16 hex。量化步长(§2 显式值时)作为参数在列,天然进入。
 - 计算一次于构造完成时;进程内不变。
 
-## 5. map_digest(带取样时点)
+## 5. map_digest(每行带当周期 digest,不是一次 run 一个)
 
-- explore 期间地图持续变化,digest 必须绑定取样时刻,否则两批数据的 map 无法对齐。
-- 每周期取 map 快照后计算: 对 `latest_map_` data 做轻量摘要(res 粗采样的
-  occupancy 值序列 sha256 前 16 hex)。map_digest 只在 heartbeat 行随行给出,
-  事件行沿用最近一次 heartbeat 的 digest(写明该 heartbeat 的 t,列 map_digest_t)。
+- explore 期间地图持续变化;一次 run 一个 digest 无法回答"这一行是在哪张地图上
+  产生的"。**每个事件行(含 heartbeat 与事件行)都带该事件所在检测周期的 digest**。
+- 实现: 每个 IDLE 检测周期拿到 `latest_map_` 快照后算一次 digest,缓存为
+  "当前周期 digest";该周期产生的 heartbeat 行与后续事件行共用此值,直到下一周期
+  刷新。语义: "t 时刻生效的地图快照摘要" —— 一个行的 digest = 在 t 或 t 之前最近的
+  检测周期的地图摘要(事件恒发生在某检测周期之后、下一周期之前)。
+- digest 算法: 对 data 按 stride=8 粗采样(行与列均 stride 8),取每个采样格
+  occupancy 值(0/100/-1)组串 → sha256 前 16 hex。stride 计入 schema_version 备注,
+  不与 config 挂钩(纯摘要口径,改动只影响可比性标注,不改变任何行为)。
+- map_digest 列与 map 时刻的解耦不再需要单独 map_digest_t —— 行自带 t。
 
 ## 6. action 受控词表(与 4060 doc `{accept,reject,preempt}` 的关系)
 
@@ -85,7 +93,6 @@
 
 - nav2_result 受控词表: `accepted / rejected_by_nav2 / succeeded / aborted /
   canceled / timed_out / (heartbeat 行为空)`;error_code 不单独成列(可加列,待裁)。
-
 ## 7. readiness_status(需新增定义,现无信号)
 
 - 词表: `ready` | `waiting_map` | `waiting_nav2` | `navigating` | `cooldown` |
@@ -98,12 +105,17 @@
 - heartbeat 每检测周期 1 行(period 默认 1 s);事件行即时追加。CSV 头为首行。
 - 5 种子一次性导出: 由运行侧 launch/脚本每种子单独进程导出,不做进程内多 seed。
 
-## 9. 待 4060 侧拍板项(不阻塞本包实现,但影响 schema 冻结)
+## 9. 拍板记录(2026-09-08: 按下列推荐值实现,分析前可覆写)
 
-1. action 扩展词表(heartbeat/reject/probe/timeout/abort)是否接受?preempt 无触发点,
-   留空转列还是暂缺?
-2. nav2_result 词表与 error_code 是否成列?
-3. stable quant 默认自动=分辨率(单射无碰撞)是否采纳?还是固定 0.5 m 进 config_hash?
-4. map_digest 轻量摘要: 全 data sha256 太重;res 粗采样(如 stride 8)可接受?
-5. goal_x/goal_y 用投影后安全点(实际派发值)还是原始 frontier rep?(分析 revisit 用 rep
-   更贴地理,派发跟踪用 safe;当前取派发值,与 Nav2 实际收敛目标一致)
+1. action 扩展词表(`heartbeat/accept/reject/probe/timeout/result`)采纳;
+   `preempt` 当前代码无触发点 —— 词表预留,导出器不产生该值(B4/B5 引入抢占时挂上)。
+2. nav2_result 词表采纳;Nav2 error_code 独立成列 `nav2_error_code`(-1=无)。
+3. quant 默认 **0.0 = 自动取地图分辨率**(单射、无碰撞);显式 >0 进 config_hash。
+4. map digest stride=8 采纳;**每行带当周期 digest**(§5 改定)。
+5. goal_x/goal_y 取**派发值**(投影后安全点 / 探针点)——与 Nav2 实际收敛目标一致;
+   分析 revisit 需要地理 rep 时,可再增列 raw_goal_x/raw_goal_y(暂不加,防列膨胀)。
+6. reject 行 = 该周期存在 frontier 但未派发 goal(全部被抑制)时输出 1 行,
+   原因词入 event_detail(no_frontier / all_blacklisted / all_too_close /
+   entrance_hysteresis / loop_no_probe);不逐候选输出(防 CSV 洪泛,诊断需要时再细分)。
+7. seed/输出路径/量化步长为节点参数(eventlog_csv / eventlog_seed /
+   eventlog_stable_quant_m);eventlog_csv 空 = 导出禁用(默认关,不影响既有行为)。
