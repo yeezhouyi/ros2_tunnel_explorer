@@ -4,7 +4,8 @@
 
 > **仓库导航（对外展示口径）**
 > - **Default branch**: `main`
-> - **Canonical sealed baseline**: `v1.0.0-sealed`（本 README 状态表与
+> - **Current development head**: `main`（变动分支，不作为对外引用口径）
+> - **Canonical sealed baseline**: `v1.0.0-sealed` @ `b162fc1`（本 README 状态表与
 >   `docs/seal_results.json` 均为该基线口径；对外只引 tag/固定 commit，不引变动分支）
 > - **Historical development branches**: `stage4*`、`bline-*`、`postseal2-*`
 >   等为实验/过程线，保留作工程证据，不代表当前成果口径
