@@ -11,6 +11,6 @@
 | 4 | 依赖就绪与故障处理 | ✅ | READY 门控（无地图/定位/Nav2 不接受任务）、child_goal 超时 watchdog（有界取消 grace）、每段有界重试（max_attempts）→ 失败分类（WORK_TRACKING_FAILED / APPROACH / TRANSITION） | 无 |
 | 5 | 可定位问题的运行记录 | ✅ | `scripts/run_chain_audit.sh`：每 run 独立目录（launch.log / goal.log / odom bag / metrics.json / audit）；代码版本由 git tag/commit 锚定（postseal2 分支） | 无 |
 | 6 | 端到端验收 | ✅ | 6-run canonical 集 + run9/10/11（正常完成 + 失败段 + 恢复路径均出现过并被归因）；取消路径有代码级状态机与测试 | 取消/暂停恢复的专项 e2e 未单独录制——记为待办 |
-| 7 | CI | ✅（本批新增） | `.github/workflows/ci.yml`：ros:jazzy 容器 colcon build + 核心包单测（CI 有网络，xmllint schema 拉取在 CI 可通过） | 首跑结果待观察 |
+| 7 | CI | ✅（本批新增） | `.github/workflows/ci.yml`：ros:jazzy 容器 colcon build + 核心包单测（CI 有网络，xmllint schema 拉取在 CI 可通过） | 首跑 GREEN（2026-09-09） |
 
 算法对比证据（P0 已完成，见 `docs/coverage_strategy_compare.md`）与漏覆盖分类（`artifacts/miss_classification/`）支撑"三口径不会混为一个覆盖率"的验收。
