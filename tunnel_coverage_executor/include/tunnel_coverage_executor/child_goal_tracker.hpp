@@ -33,6 +33,15 @@
 // issues async_cancel the moment the handle exists -- it is never merely
 // stored and left running (review: "cancel first, goal handle later").
 //
+// Goal REJECTION: a server that refuses a goal answers goal_response with a
+// NULL handle and never produces a result callback.  onGoalResponse(g,
+// accepted) therefore clears the wait on a rejection (kRejectedCurrent) so
+// the caller fails/retries immediately instead of waiting out the watchdog.
+// A rejection NEVER answers kStoreAndCancel: that branch is only reachable
+// when accepted == true, so async_cancel_goal() is only ever called with a
+// live handle -- a null handle cannot be dereferenced (review: rejected-goal
+// null-handle cancel).
+//
 // One instance tracks the single logical child goal (nav OR follow).  The
 // node still owns the rclcpp handles/timers and the exec/segment state.
 #ifndef TUNNEL_COVERAGE_EXECUTOR__CHILD_GOAL_TRACKER_HPP_
@@ -64,10 +73,16 @@ enum class WatchAction
 enum class ResponseAction
 {
   kStale,           // response of an abandoned/superseded goal: drop it
+  kRejectedCurrent,  // current goal was REFUSED by the server (NULL handle):
+                     // nothing is running and no result will arrive; the wait
+                     // is cleared -- caller fails/retries immediately (or, in
+                     // the cancelling phase, keeps stop confirmation).  Never
+                     // issue a transport cancel: there is no handle.
   kStoreOnly,       // current goal, nothing pending: store the handle
   kStoreAndCancel   // current goal but a stop was requested BEFORE the
                     // handle arrived: issue async_cancel on it IMMEDIATELY,
-                    // never leave it running (late-handle cancel)
+                    // never leave it running (late-handle cancel).  Only
+                    // reachable with a NON-NULL handle (accepted == true).
 };
 
 /// Child-goal lifecycle policy (see file comment).
@@ -101,9 +116,9 @@ public:
   bool sent() const {return sent_;}
 
   /// True while the transport handle of the current goal is known (the
-  /// server answered goal_response).  Only then can a cancel actually be
-  /// delivered; a goal whose response never arrived has nothing to cancel
-  /// and can only be abandoned by the watchdog.
+  /// server answered goal_response with an ACCEPTED goal).  Only then can a
+  /// cancel actually be delivered; a goal whose response never arrived has
+  /// nothing to cancel and can only be abandoned by the watchdog.
   bool handleKnown() const {return handle_known_;}
 
   /// True once async_cancel was actually issued for the current goal
@@ -124,15 +139,30 @@ public:
   /// delivered to a known handle yet.
   bool cancelWanted() const {return cancel_wanted_;}
 
-  /// goal_response_callback.  A response of an abandoned/superseded goal is
-  /// stale and must be dropped.  A current goal whose stop was requested
-  /// before the handle arrived must be answered with kStoreAndCancel so the
-  /// transport cancels it immediately instead of storing and leaving it
-  /// running.  Otherwise the handle is stored for the caller.
-  ResponseAction onGoalResponse(std::uint64_t g)
+  /// goal_response_callback.  `accepted` is true iff the server answered
+  /// with a non-null goal handle.
+  ///
+  ///  * response of an abandoned/superseded goal -> kStale (drop).
+  ///  * current goal REFUSED (accepted == false, null handle) -> the wait is
+  ///    cleared and kRejectedCurrent is returned; the caller fails/retries
+  ///    (or keeps stopping) and MUST NOT call async_cancel -- there is no
+  ///    handle.  No result callback will ever arrive for a refused goal, so
+  ///    clearing sent_ here is what prevents the watchdog waiting forever.
+  ///  * current goal accepted, stop requested before the handle arrived ->
+  ///    kStoreAndCancel: the transport cancels it immediately instead of
+  ///    storing and leaving it running.
+  ///  * otherwise the handle is stored for the caller (kStoreOnly).
+  ResponseAction onGoalResponse(std::uint64_t g, bool accepted)
   {
     if (g != gen_) {
       return ResponseAction::kStale;
+    }
+    if (!accepted) {
+      sent_ = false;
+      handle_known_ = false;
+      cancel_wanted_ = false;
+      cancel_asked_ = false;
+      return ResponseAction::kRejectedCurrent;
     }
     handle_known_ = true;
     if (cancel_wanted_ && !cancel_asked_) {

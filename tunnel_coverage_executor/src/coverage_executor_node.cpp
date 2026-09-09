@@ -709,14 +709,31 @@ void CoverageExecutorNode::sendNavigate(
   const std::uint64_t gen = child_tracker_.dispatch();
   auto send_opts = NavClient::SendGoalOptions();
   send_opts.goal_response_callback =
-    [this, gen](const NavClient::GoalHandle::SharedPtr & gh)
+    [this, idx = exec_index_, gen](
+    const NavClient::GoalHandle::SharedPtr & gh)
     {
-      switch (child_tracker_.onGoalResponse(gen)) {
+      switch (child_tracker_.onGoalResponse(gen, gh != nullptr)) {
         case ResponseAction::kStale:
           return;   // abandoned/superseded before the server answered
+        case ResponseAction::kRejectedCurrent:
+          // Server refused the goal (null handle): nothing is running and no
+          // result callback will ever arrive, so stop waiting NOW instead of
+          // letting the watchdog time out.  There is no handle, so no
+          // transport cancel is attempted here.
+          nav_gh_.reset();
+          if (phase_ != PHASE_CANCELLING) {
+            RCLCPP_WARN(get_logger(),
+              "NavigateToPose goal rejected — failing segment");
+            pending_outcome_ = ChildOutcome{idx, false};
+          }
+          // Cancelling phase: the goal never started; the tracker already
+          // cleared the wait, so tickCancelling finishes once the robot is
+          // observed stationary (no cancel is needed).
+          return;
         case ResponseAction::kStoreAndCancel: {
           // Stop was requested before this handle arrived: cancel the goal
-          // NOW on the transport instead of storing a running goal.
+          // NOW on the transport instead of storing a running goal.  gh is
+          // guaranteed non-null here (rejection never reaches this branch).
             nav_client_->async_cancel_goal(gh);
             child_tracker_.noteCancelSent();
             return;
@@ -787,14 +804,31 @@ void CoverageExecutorNode::sendFollow(
   const std::uint64_t gen = child_tracker_.dispatch();
   auto send_opts = FollowClient::SendGoalOptions();
   send_opts.goal_response_callback =
-    [this, gen](const FollowClient::GoalHandle::SharedPtr & gh)
+    [this, idx = exec_index_, gen](
+    const FollowClient::GoalHandle::SharedPtr & gh)
     {
-      switch (child_tracker_.onGoalResponse(gen)) {
+      switch (child_tracker_.onGoalResponse(gen, gh != nullptr)) {
         case ResponseAction::kStale:
           return;   // abandoned/superseded before the server answered
+        case ResponseAction::kRejectedCurrent:
+          // Server refused the goal (null handle): nothing is running and no
+          // result callback will ever arrive, so stop waiting NOW instead of
+          // letting the watchdog time out.  There is no handle, so no
+          // transport cancel is attempted here.
+          follow_gh_.reset();
+          if (phase_ != PHASE_CANCELLING) {
+            RCLCPP_WARN(get_logger(),
+              "FollowPath goal rejected — failing segment");
+            pending_outcome_ = ChildOutcome{idx, false};
+          }
+          // Cancelling phase: the goal never started; the tracker already
+          // cleared the wait, so tickCancelling finishes once the robot is
+          // observed stationary (no cancel is needed).
+          return;
         case ResponseAction::kStoreAndCancel: {
           // Stop was requested before this handle arrived: cancel the goal
-          // NOW on the transport instead of storing a running goal.
+          // NOW on the transport instead of storing a running goal.  gh is
+          // guaranteed non-null here (rejection never reaches this branch).
             follow_client_->async_cancel_goal(gh);
             child_tracker_.noteCancelSent();
             return;

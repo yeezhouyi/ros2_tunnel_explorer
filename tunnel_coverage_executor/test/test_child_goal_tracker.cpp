@@ -22,7 +22,12 @@
 //      guard and never touches the new task's state -- the "asked to stop"
 //      and "late result ignored" are verified as separate mechanisms;
 //   3. a cancel that is rejected or stalls (no result ever arrives) is
-//      still bounded by timeout + grace and the executor moves on.
+//      still bounded by timeout + grace and the executor moves on;
+//   4. a goal the server REFUSES (null handle in goal_response, review
+//      high-priority) clears the wait immediately -- no watchdog wait for a
+//      result that will never arrive -- and a rejection after a stop was
+//      requested is kRejectedCurrent, NEVER kStoreAndCancel, so the node can
+//      never call async_cancel_goal on a null handle.
 #include <cstdint>
 
 #include "gtest/gtest.h"
@@ -96,13 +101,13 @@ TEST(ChildGoalTracker, CancelBeforeHandleReturnedNeverWedges)
   EXPECT_FALSE(t.sent());
   EXPECT_FALSE(t.handleKnown());
   // the handle finally arrives for the abandoned goal: stale, dropped
-  EXPECT_EQ(t.onGoalResponse(g), ResponseAction::kStale);
+  EXPECT_EQ(t.onGoalResponse(g, true), ResponseAction::kStale);
   EXPECT_FALSE(t.handleKnown());
   // a late result of the abandoned goal is ignored
   EXPECT_EQ(t.onResult(g, false), ChildResult::kStaleIgnored);
   // the executor is free to dispatch the next goal and complete it
   const std::uint64_t g2 = t.dispatch();
-  EXPECT_EQ(t.onGoalResponse(g2), ResponseAction::kStoreOnly);
+  EXPECT_EQ(t.onGoalResponse(g2, true), ResponseAction::kStoreOnly);
   EXPECT_TRUE(t.handleKnown());
   EXPECT_EQ(t.onResult(g2, false), ChildResult::kReady);
   EXPECT_FALSE(t.sent());
@@ -114,7 +119,7 @@ TEST(ChildGoalTracker, LateOldResultIgnoredWhileStopWasSeparatelyAsked)
 {
   ChildGoalTracker t;
   const std::uint64_t old_gen = t.dispatch();
-  ASSERT_EQ(t.onGoalResponse(old_gen), ResponseAction::kStoreOnly);
+  ASSERT_EQ(t.onGoalResponse(old_gen, true), ResponseAction::kStoreOnly);
   // watchdog: past the timeout -> ask the server to cancel the old goal
   EXPECT_EQ(t.watch(kTimeout + 0.1, kTimeout, kGrace), WatchAction::kCancel);
   t.noteCancelSent();   // the node transport sent async_cancel_goal
@@ -162,7 +167,7 @@ TEST(ChildGoalTracker, NormalSuccessAndFailureBothReportReady)
 {
   ChildGoalTracker t;
   const std::uint64_t g = t.dispatch();
-  ASSERT_EQ(t.onGoalResponse(g), ResponseAction::kStoreOnly);
+  ASSERT_EQ(t.onGoalResponse(g, true), ResponseAction::kStoreOnly);
   EXPECT_TRUE(t.handleKnown());
   // the caller decides ok from ResultCode; the tracker reports readiness
   EXPECT_EQ(t.onResult(g, false), ChildResult::kReady);
@@ -176,7 +181,7 @@ TEST(ChildGoalTracker, CancellingPhaseClearsWithoutQueuingAnOutcome)
 {
   ChildGoalTracker t;
   const std::uint64_t g = t.dispatch();
-  ASSERT_EQ(t.onGoalResponse(g), ResponseAction::kStoreOnly);
+  ASSERT_EQ(t.onGoalResponse(g, true), ResponseAction::kStoreOnly);
   EXPECT_EQ(t.onResult(g, true), ChildResult::kClearedCancelling);
   EXPECT_FALSE(t.sent());
   EXPECT_FALSE(t.handleKnown());
@@ -196,7 +201,7 @@ TEST(ChildGoalTracker, LateHandleAfterCancelRequestIsCancelledOnArrival)
   EXPECT_TRUE(t.cancelWanted());
   EXPECT_FALSE(t.cancelAsked());
   // the late goal_response finally arrives: the node must cancel, not store
-  EXPECT_EQ(t.onGoalResponse(g), ResponseAction::kStoreAndCancel);
+  EXPECT_EQ(t.onGoalResponse(g, true), ResponseAction::kStoreAndCancel);
   // the node transport sends async_cancel_goal on the late handle
   t.noteCancelSent();
   EXPECT_TRUE(t.cancelAsked());
@@ -221,12 +226,12 @@ TEST(ChildGoalTracker, CancelDeliveredThenExtraResponseIsStoredOnly)
 {
   ChildGoalTracker t;
   const std::uint64_t g = t.dispatch();
-  ASSERT_EQ(t.onGoalResponse(g), ResponseAction::kStoreOnly);
+  ASSERT_EQ(t.onGoalResponse(g, true), ResponseAction::kStoreOnly);
   t.requestCancel();
   t.noteCancelSent();   // tickCancelling sent async_cancel on the handle
   EXPECT_TRUE(t.cancelAsked());
   // a repeated response for the same (now-cancelled) goal: no second cancel
-  EXPECT_EQ(t.onGoalResponse(g), ResponseAction::kStoreOnly);
+  EXPECT_EQ(t.onGoalResponse(g, true), ResponseAction::kStoreOnly);
 }
 
 // A cancel that was requested while the handle was still missing stays
@@ -240,7 +245,67 @@ TEST(ChildGoalTracker, CancelWantedSurvivesUntilHandleArrives)
   // tickCancelling first tick: no handle known, so nothing is delivered yet
   EXPECT_TRUE(t.cancelWanted());
   // the late handle arrives on a later tick: cancel is demanded
-  EXPECT_EQ(t.onGoalResponse(g), ResponseAction::kStoreAndCancel);
+  EXPECT_EQ(t.onGoalResponse(g, true), ResponseAction::kStoreAndCancel);
+}
+
+// Review fix (goal rejected): a server that refuses a goal answers
+// goal_response with a NULL handle and never produces a result callback.
+// The tracker must clear the wait immediately so the caller turns the
+// rejection into the failure/retry path instead of waiting out the
+// watchdog for a result that will never arrive.
+TEST(ChildGoalTracker, NormalDispatchThenRejectedClearsWaitImmediately)
+{
+  ChildGoalTracker t;
+  const std::uint64_t g = t.dispatch();
+  EXPECT_TRUE(t.sent());   // watchdog armed while awaiting the answer
+  EXPECT_FALSE(t.handleKnown());
+  // server refuses the goal (null handle)
+  EXPECT_EQ(t.onGoalResponse(g, false), ResponseAction::kRejectedCurrent);
+  EXPECT_FALSE(t.sent());          // nothing in flight any more
+  EXPECT_FALSE(t.handleKnown());   // no handle was ever stored
+  EXPECT_FALSE(t.cancelAsked());
+  // no result will ever arrive, so the watchdog must not keep firing
+  EXPECT_EQ(t.watch(1e9, kTimeout, kGrace), WatchAction::kNone);
+  // the executor can dispatch the next goal right away and complete it
+  const std::uint64_t g2 = t.dispatch();
+  EXPECT_EQ(t.onGoalResponse(g2, true), ResponseAction::kStoreOnly);
+  EXPECT_EQ(t.onResult(g2, false), ChildResult::kReady);
+  EXPECT_FALSE(t.sent());
+}
+
+// Review fix (goal rejected AFTER a stop was requested): the late answer is
+// a rejection, NOT an accepted handle that needs cancelling.  The tracker
+// must answer kRejectedCurrent -- never kStoreAndCancel for a null handle --
+// so the node never calls async_cancel_goal(nullptr) (null dereference).
+TEST(ChildGoalTracker, CancelRequestedThenRejectedNeverCancelsANullHandle)
+{
+  ChildGoalTracker t;
+  const std::uint64_t g = t.dispatch();
+  t.requestCancel();                 // stop requested, no handle yet
+  EXPECT_TRUE(t.cancelWanted());
+  // the late answer is a REJECTION (null handle): nothing to cancel
+  EXPECT_EQ(t.onGoalResponse(g, false), ResponseAction::kRejectedCurrent);
+  EXPECT_FALSE(t.cancelAsked());     // async_cancel was NOT issued
+  EXPECT_FALSE(t.cancelWanted());    // wait fully cleared by the rejection
+  EXPECT_FALSE(t.sent());            // tickCancelling may finish once stopped
+  EXPECT_FALSE(t.handleKnown());
+}
+
+// A rejection that arrives for an ALREADY abandoned goal is stale like any
+// other late response and must not mutate the state of the newer dispatch.
+TEST(ChildGoalTracker, StaleRejectionIsDroppedLikeAnyOtherLateResponse)
+{
+  ChildGoalTracker t;
+  const std::uint64_t old_gen = t.dispatch();
+  ASSERT_EQ(t.onGoalResponse(old_gen, true), ResponseAction::kStoreOnly);
+  t.abandon();                       // watchdog force-fail, gen advances
+  const std::uint64_t new_gen = t.dispatch();
+  EXPECT_TRUE(t.isCurrent(new_gen));
+  EXPECT_TRUE(t.sent());
+  // the old goal's rejection arrives late: stale, dropped, wait untouched
+  EXPECT_EQ(t.onGoalResponse(old_gen, false), ResponseAction::kStale);
+  EXPECT_TRUE(t.sent());
+  EXPECT_TRUE(t.isCurrent(new_gen));
 }
 
 }  // namespace tunnel_coverage_executor

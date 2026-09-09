@@ -16,6 +16,9 @@ so.  They must not re-assert implementation text that has been deleted.
     ChildGoalTracker; a late goal handle that arrives AFTER a stop was
     requested must be cancelled immediately on the transport
     (ResponseAction::kStoreAndCancel -> async_cancel_goal), not stored.
+    A goal the server REFUSES (null goal_response handle) is routed to
+    ResponseAction::kRejectedCurrent BEFORE any cancel branch is reachable,
+    so async_cancel_goal is never called on a null handle.
 #7  The coverage bar applies to BOTH success classes: a below-bar effective
     coverage collapses SUCCEEDED_WITH_EXEMPTIONS to PARTIAL_FAILED instead
     of letting exempt_ratio excuse the miss.
@@ -91,7 +94,7 @@ def test_navigate_dispatch_and_response_route_through_tracker():
     end = src.index("void CoverageExecutorNode::sendFollow(")
     nav_region = src[start:end]
     assert "child_tracker_.dispatch()" in nav_region
-    assert "child_tracker_.onGoalResponse(gen)" in nav_region
+    assert "child_tracker_.onGoalResponse(gen, gh != nullptr)" in nav_region
     assert "Stale NavigateToPose result ignored" in nav_region
 
 
@@ -112,7 +115,7 @@ def test_follow_dispatch_and_late_handle_cancel_route_through_tracker():
     start = src.index("void CoverageExecutorNode::sendFollow(")
     tail = src[start:]
     assert "child_tracker_.dispatch()" in tail
-    assert "child_tracker_.onGoalResponse(gen)" in tail
+    assert "child_tracker_.onGoalResponse(gen, gh != nullptr)" in tail
     assert "ResponseAction::kStoreAndCancel" in tail
     assert "follow_client_->async_cancel_goal(gh)" in tail
     assert "child_tracker_.noteCancelSent()" in tail
@@ -144,6 +147,43 @@ def test_watchdog_cancel_without_handle_requests_late_handle_cancel():
     # it must remember the stop request so the late handle is cancelled.
     assert "child_tracker_.requestCancel()" in body
     assert "child_tracker_.noteCancelSent()" in body
+
+
+def test_rejected_goal_is_handled_before_any_transport_cancel():
+    """A refused goal (null goal_response handle) must be routed to
+    kRejectedCurrent -- never to kStoreAndCancel -- so async_cancel_goal
+    cannot dereference a null handle.  Behaviour is unit-tested in
+    test_child_goal_tracker (same seam); this pins the node's wiring."""
+    src = _text(NODE_CPP)
+    for name, nxt, handle, client in [
+        ("void CoverageExecutorNode::sendNavigate(",
+         "void CoverageExecutorNode::sendFollow(",
+         "nav_gh_", "nav_client_"),
+        ("void CoverageExecutorNode::sendFollow(",
+         None,
+         "follow_gh_", "follow_client_"),
+    ]:
+        start = src.index(name)
+        end = src.index(nxt) if nxt else len(src)
+        region = src[start:end]
+        # null vs live handle is what the tracker decision is keyed on
+        assert "child_tracker_.onGoalResponse(gen, gh != nullptr)" in region
+        assert "ResponseAction::kRejectedCurrent" in region
+        i_rej = region.index("case ResponseAction::kRejectedCurrent")
+        i_sac = region.index("case ResponseAction::kStoreAndCancel")
+        i_store = region.index("case ResponseAction::kStoreOnly", i_sac)
+        # rejection is decided BEFORE the cancel branch is even reachable
+        assert i_rej < i_sac < i_store
+        # the rejection case clears the wait / queues the failure and
+        # contains NO transport cancel of the (null) handle
+        rej_block = region[i_rej:i_sac]
+        assert "async_cancel_goal" not in rej_block
+        assert "pending_outcome_ = ChildOutcome{idx, false}" in rej_block
+        assert handle + ".reset()" in rej_block
+        # the only cancel call site lives in the accepted kStoreAndCancel case
+        sac_block = region[i_sac:i_store]
+        assert client + "->async_cancel_goal(gh)" in sac_block
+        assert "child_tracker_.noteCancelSent()" in sac_block
 
 
 # ── #7: coverage bar applies to both success classes ─────────────────────
