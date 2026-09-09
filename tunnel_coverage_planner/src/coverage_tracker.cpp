@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <vector>
 #include "tunnel_coverage_planner/coverage_tracker.hpp"
+
+#include <vector>
 
 #include <algorithm>
 #include <cmath>
