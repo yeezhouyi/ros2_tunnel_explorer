@@ -1,0 +1,128 @@
+{
+ "_comment": "Seal source of truth (Day 10). README results table and the resume MUST render from this file (Day10: coverage numbers = r015 coverage_task with r010 band); regenerate everything with the commands in each entry. Tree: ros2_tunnel_explorer bline-merge-20260908; D-line linear_mpc_controller cloud-exploration-20260908.",
+ "_gauge": "Grid numbers gauge odom (odom origin = spawn (0,0) in the served map frame; shift (0,0)) against plan_from_map masks over the served static map cleaning_room_rect (origin -3.0/-2.0, executable 6996).  Earlier map_saved-shift and python-plan-start-shift passes were gauge artifacts and are retracted.",
+ "coverage_chain": {
+  "tree": "bline-merge-20260908",
+  "audit_doc": "docs/day68_chain_audit.md",
+  "semantics_doc": "docs/chain_semantics.md",
+  "runs": 4,
+  "executor_effective": {
+   "mean": 0.8976,
+   "min": 0.8858,
+   "max": 0.9125
+  },
+  "executor_repeat_ratio": {
+   "min": 0.62,
+   "max": 0.72
+  },
+  "segments": "36-37/37 covered per run, 0-1 failed (run6: one WORK_TRACKING_FAILED)",
+  "grid_coverage_task": {
+   "mean": 0.2375,
+   "min": 0.2214,
+   "max": 0.2613
+  },
+  "grid_coverage_known_free": {
+   "min": 0.2151,
+   "max": 0.2569
+  },
+  "driven_m": {
+   "min": 117.3,
+   "max": 172.7
+  },
+  "planned_m_python_over_served_map": 60.75,
+  "served_map": "cleaning_room_rect (static), origin -3.0/-2.0; executable cells 6996; python-canonical route 60.75 m / 22 waypoints",
+  "executor_map_digest_plan_id": "6649dcb8... / 2f2c3d0b... (stable across runs; executor-internal)",
+  "audit_tool": "audit_b6_coverage.py (D-line @ 85276e3) + audit_b6_triple.py (@ fd1f493); run at BOTH footprint radii 0.10 and 0.15; coverage figure is the 0.15 run with the 0.10 run as conservative band (see ceiling).",
+  "reproduce": [
+   "python3 <tunnel>/scripts/regen_plan_from_masks.py --masks <audit_masks.npz> --outdir <dir>  (python plan reproducibility over a given map)",
+   "python3 <D-line>/benchmark_tools/scripts/plan_from_map.py --map-yaml <served map yaml> --outdir <dir>  (gauge masks over the served map)",
+   "bash <tunnel>/scripts/run_chain_audit.sh <run_dir> <served-map audit_masks.npz>"
+  ],
+  "claim": "segment ledger stable (+/-1.5%, executor-internal); grid coverage_task 0.221-0.261 (mean 0.238) is map-area coverage of the driven path against the served-map executable mask -- NOT a plan-trace match to the python route; report RANGE + both denominators; executor ledger != absolute coverage.",
+  "run_set": {
+   "valid": [
+    {
+     "id": "run_v",
+     "seq": 1
+    },
+    {
+     "id": "run4",
+     "seq": 2
+    },
+    {
+     "id": "run5",
+     "seq": 3
+    },
+    {
+     "id": "run6",
+     "seq": 4
+    }
+   ],
+   "excluded": [
+    "run1, run2, run3: aborted before the tunnel_worlds asset import (missing cleaning_room_rect world/map -> gz 255 / map_server failed -> executor never READY_IDLE -> empty odom bag -> zero audits).  Retained only as failure artifacts under chain_day68/records; not part of any reported statistic."
+   ]
+  },
+  "shift": "spawn (0,0); residual AMCL bias +-0.5 m scale",
+  "grid_in_mask_frac": {
+   "min": 0.6365,
+   "max": 0.9429,
+   "mean": 0.76
+  },
+  "grid_coverage_task_r010": {
+   "mean": 0.504,
+   "min": 0.4521,
+   "max": 0.5756
+  },
+  "grid_coverage_task_r015": {
+   "mean": 0.628,
+   "min": 0.5587,
+   "max": 0.7364
+  },
+  "grid_coverage_known_free_r015": {
+   "mean": 0.594,
+   "min": 0.5366,
+   "max": 0.6855
+  },
+  "r010_undercredit_vs_r015_pct": {
+   "min": 18.27,
+   "max": 22.32,
+   "mean": 19.9
+  },
+  "ceiling": "Lane spacing 0.30 m encodes a design intent of a 0.30 m-wide cleaning tool; r=0.15 adopts that intent and r=0.10 is the conservative lower bound when it is NOT adopted.  The tool width is NOT calibrated in this simulation (footprint_radius_m in the planner is the body-inflation/avoidance radius, a different quantity, not evidence for the tool width).  Both radii are therefore reported; no single value is taken."
+ },
+ "mpc_matrix": {
+  "tree": "linear_mpc_controller cloud-exploration-20260908",
+  "doc": "results/a8_replay/MATRIX.md",
+  "claims_resume": [
+   "Implements a STATE-HELD Frenet windowed projection + displacement-budget acceptance gate replacing stateless global nearest-point, eliminating lane mis-attachment on folding/reversing paths (A5.1/A5.2/A4.2 reacquire; C++ mirror + tests).",
+   "Designed a 3-geometry x 2-v_min x 2-projection-mode 12-cell ablation matrix; located the true failure axis as path geometry and v_min, NOT the projection implementation (10/12 cells bit-identical across projection modes), and on that basis decided NO maneuver-generation layer is needed.",
+   "Ran per-point kinematic-feasibility audit of the planner output: 16/250 reference points exceed the angular-velocity bound, giving the fix criterion v <= omega_max/|kappa| (implemented, D-line 85276e3; omega_violations guard).",
+   "C++/Python cross-language projection golden parity check (projection_golden.json shared file consumed by both sides; ctest projection_golden + pytest parity suite)."
+  ],
+  "failure_axis": "geometry & v_min, not projection implementation",
+  "a9_decisions": [
+   "cap geometry passes at both v_min -> no maneuver-generation layer",
+   "nocap v_min=0 stalls -> needs negative-velocity authority",
+   "backward geometry stalls -> needs true reversing kinematics"
+  ]
+ },
+ "b6b_nav2_plugin": {
+  "tree": "linear_mpc_controller cloud-exploration-20260908",
+  "claims_resume": [
+   "nav2_core::Controller plugin loaded by controller_server; the robot pose is transformed into the path frame each cycle so the cross-cycle projection-gate state is never silently reset (setReference only on setPlan).",
+   "Defines a graded failure contract: InvalidPath on degenerate plans, ControllerTFError on tf loss, NoValidControl on PROJECTION_LOST / ambiguous projection / consecutive QP failures, zero velocity WITHOUT throw while reacquire-seeking.",
+   "Negative control proves the terminal-stop clamp: removing it overshoots 2.36 m arc end by 13.14-13.16 m vs intact 1.977/1.979 m (delta 11.18 m; docx-recorded 13.37 m-class reproduced).",
+   "Sandbox gates: stage1 lifecycle 4/4, straight 7/7, arc 8/8."
+  ],
+  "not_wired_into_chain": true,
+  "no_hard_realtime_claim": true
+ },
+ "boundaries": [
+  "No hard real-time statement is authorized.",
+  "Executor plans internally via C++ ScanlinePlanner over the served static map; python cleaning_mode is canonical only for plan reproducibility over the served map (60.75 m / 22 waypoints on cleaning_room_rect) and is NOT route-identical to the executor's segments.",
+  "Chain controller = RotationShim + DWB; the linear-MPC plugin is a separate sandbox-verified deliverable.",
+  "map_saved-gauge coverage numbers (historical 0.2486/0.2836) are retracted as coverage claims.",
+  "U9-era entrance-hysteresis A/B numbers (1/5, 590 s, -45% goals) are NOT reproducible from any committed tree and are excluded from README and resume."
+ ],
+ "real_path_status": "Day 4-5 outcome: a single-shot MPC over the raw recorded plan is NOT trackable -- STALL at accepted 0.631 m over 201 steps (progress_ratio 0.009) with 157 QP failures (a8_0_alignment.json, D-line @ fd1f493 unchanged); the raw plan violates kinematics (16/250 points exceed omega_max=2.0, |kappa| up to 31.4).  Chain-level execution is the executor's segment dispatch over the served static map (see coverage_chain).  Any reference entering a tracker must satisfy the omega_violations guard (max|v*kappa|<=omega_max), red on the old profile, green after the v<=omega_max/|kappa| fix (D-line 85276e3).  This status replaces any 'real 69.95 m path progress>=0.95' framing, which is not met by single-shot MPC."
+}

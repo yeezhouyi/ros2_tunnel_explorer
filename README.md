@@ -2,6 +2,13 @@
 
 面向隧道巡检场景的 ROS2 自主探索与风险感知路径规划系统。
 
+> **仓库导航（对外展示口径）**
+> - **Default branch**: `main`
+> - **Canonical sealed baseline**: `v1.0.0-sealed`（本 README 状态表与
+>   `docs/seal_results.json` 均为该基线口径；对外只引 tag/固定 commit，不引变动分支）
+> - **Historical development branches**: `stage4*`、`bline-*`、`postseal2-*`
+>   等为实验/过程线，保留作工程证据，不代表当前成果口径
+
 ## Status
 
 | Stage | Description | Status |
@@ -495,3 +502,61 @@ See [docs/jazzy_compatibility.md](docs/jazzy_compatibility.md) for full details.
 ## License
 
 Apache-2.0
+
+## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)
+
+> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
+> **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
+
+
+
+- **cleaning_mode/**:弓形覆盖规划器(障碍膨胀/扫描线分解/A* 连接/
+  覆盖规划/路径平滑)+ map_saver PGM/YAML 加载器。测试 16/16 绿。
+- **30-run 离线基准**:boustrophedon 中位路径 **414.5m** vs 逐行基线
+  797.4m(**短 48%**),规划 11ms,全部 OK(`artifacts/cleaning_benchmark/`)。
+- **B6 全链**:探索(录制 1820 位姿)→ MPC `path_file` 跟踪(live 位移
+  0.395m PASS)→ 离线审计(子集 e_y_rms **0.0013m**)。序列见
+  `docs/b6_demo.md`,首跑结果与覆盖率回归见 `docs/coverage_audit_u7.md`。
+- **U7 覆盖率审计**:弦标记 bug 代码级定位→修复(addSweptPath)→
+  回归验证(stamped 4700 ≈ odom 重建 4698);exempt 分母(31%)列为
+  下一审计对象。全部为 WSL2/Gazebo 仿真结果。
+
+## 清洁覆盖链(合并树,Day 6-8,canonical)
+
+- **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
+  cleaning_mode/test 合一;python boustrophedon 为**served-map 复现口径**)。
+- **完整链 4 次运行**(仿真图 = 静态 `cleaning_room_rect`,map_server 日志实证;
+  AMCL + Nav2 RotationShim/DWB + coverage executor,36–37/37 段):executor
+  台账 effective **0.886–0.913**(均值 0.898,±1.5%,executor 内部口径);
+  离线栅格审计(coverage gauge = 同图 plan_from_map masks,executable
+  6996 格;odom 原点 = spawn (0,0),shift 已实证):odom 采样在掩膜内
+  比例 0.64–0.94;`coverage_task` footprint **0.10: 0.452–0.576**(均值
+  0.504)、**0.15(= 行距 0.30 一半,无缝): 0.559–0.736**(均值 0.628,
+  封面口径);`coverage_known_free`@0.15 0.537–0.686;0.10 相对 0.15
+  少记 18–22%。实驶 117–173 m vs python-canonical 计划 60.75 m。
+  **两半径均报、r015 为封面数、r010 为保守带;永不对换分母,报范围
+  不报单点**。记录:`docs/day68_chain_audit.md`。
+- **量具修正(重要)**:仿真从未使用 `b6_chain/map_saved.yaml`(SLAM 图,
+  origin −2.947/−3.665);早期以 map_saved masks 计的栅格数
+  (历史 0.2486/0.2836 与首版 day68 0.209–0.367)为**帧错位产物,已撤回**。
+  executor 内部 C++ ScanlinePlanner 规划的段结构 ≠ python 路由
+  (python 在该图 = 60.75 m/22 点),栅格指标是驱动路径对图域 executable
+  mask 的面积覆盖,非 plan-trace 比对。详见 `docs/chain_semantics.md`。
+- **启动就绪竞态已修**:客户端进程内等待 `/coverage/status`
+  phase==READY_IDLE 再发 goal(run6 首试即受理)。
+- **控制器边界**:链控制器 = RotationShim + DWB;线性 MPC Nav2 插件
+  (B6B)为独立交付物(沙箱门禁 1 4/4 / 2a 7/7 / 2b 8/8;终端减速负向
+  对照 intact 1.98 m vs 去除后 13.14–13.16 m,Δ11.18 m),**未接入本链、
+  无硬实时声明**。
+- **复现边界**:从 tag/默认分支一条命令复现的是**计划与审计工具链**
+  (`scripts/regen_plan_from_masks.py`、D 线 `audit_b6_coverage.py` /
+  `audit_b6_triple.py`)。masks/计划/审计 JSON 证据集已入库
+  `chain_day68_evidence/`(140 KB);原始 /odom bag(17–23 MB/run)
+  仍为本地不入库——需重跑仿真生成
+  (`scripts/run_chain_audit.sh <run_dir> <masks_npz>`)。
+- **样本扩展(post-seal)**:run7/run8 已补跑,6-run 扩展统计
+  (r015 均值 0.620,0.476–0.736)见 `docs/day68_chain_audit.md`
+  扩展段;封板 4-run 数字不变。
+- **封板数字**:README results 表与简历均以 `docs/seal_results.json`
+  为唯一来源(机器可读、含复现命令与 SHA);本仓库不含任何 U9 时代
+  不可复现数字。

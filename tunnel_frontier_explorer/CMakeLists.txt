@@ -109,6 +109,14 @@ if(BUILD_TESTING)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 
+  # ── EntranceHysteresis tests (U9) ────────────────────────────────────
+  ament_add_gtest(test_entrance_hysteresis
+    test/test_entrance_hysteresis.cpp
+  )
+  target_include_directories(test_entrance_hysteresis PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
   # ── FrontierScorer tests ─────────────────────────────────────────────
   ament_add_gtest(test_frontier_scorer
     test/test_frontier_scorer.cpp

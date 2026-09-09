@@ -1,0 +1,86 @@
+[
+ {
+  "bag": "run_v",
+  "odom_samples": 24772,
+  "shift_used": [
+   0.0,
+   0.0
+  ],
+  "in_mask_frac": 0.6365,
+  "union_cells_r010": 3653,
+  "union_area_m2_r010": 9.133,
+  "union_cells_r015": 4560,
+  "union_area_m2_r015": 11.4,
+  "gauge_credit_r010_over_r015_union": 0.8011,
+  "under_credit_pct_vs_r015": 19.89,
+  "coverage_task_r010": 0.4521,
+  "visited_exec_r010": 3163,
+  "coverage_task_r015": 0.5587,
+  "visited_exec_r015": 3909,
+  "coverage_known_free_r010": 0.4313,
+  "coverage_known_free_r015": 0.5366
+ },
+ {
+  "bag": "run4",
+  "odom_samples": 20207,
+  "shift_used": [
+   0.0,
+   0.0
+  ],
+  "in_mask_frac": 0.8208,
+  "union_cells_r010": 4111,
+  "union_area_m2_r010": 10.278,
+  "union_cells_r015": 5030,
+  "union_area_m2_r015": 12.575,
+  "gauge_credit_r010_over_r015_union": 0.8173,
+  "under_credit_pct_vs_r015": 18.27,
+  "coverage_task_r010": 0.5319,
+  "visited_exec_r010": 3721,
+  "coverage_task_r015": 0.6507,
+  "visited_exec_r015": 4552,
+  "coverage_known_free_r010": 0.5005,
+  "coverage_known_free_r015": 0.6114
+ },
+ {
+  "bag": "run5",
+  "odom_samples": 25600,
+  "shift_used": [
+   0.0,
+   0.0
+  ],
+  "in_mask_frac": 0.6568,
+  "union_cells_r010": 3768,
+  "union_area_m2_r010": 9.42,
+  "union_cells_r015": 4668,
+  "union_area_m2_r015": 11.67,
+  "gauge_credit_r010_over_r015_union": 0.8072,
+  "under_credit_pct_vs_r015": 19.28,
+  "coverage_task_r010": 0.4578,
+  "visited_exec_r010": 3203,
+  "coverage_task_r015": 0.5666,
+  "visited_exec_r015": 3964,
+  "coverage_known_free_r010": 0.4378,
+  "coverage_known_free_r015": 0.5432
+ },
+ {
+  "bag": "run6",
+  "odom_samples": 24172,
+  "shift_used": [
+   0.0,
+   0.0
+  ],
+  "in_mask_frac": 0.9429,
+  "union_cells_r010": 4190,
+  "union_area_m2_r010": 10.475,
+  "union_cells_r015": 5394,
+  "union_area_m2_r015": 13.485,
+  "gauge_credit_r010_over_r015_union": 0.7768,
+  "under_credit_pct_vs_r015": 22.32,
+  "coverage_task_r010": 0.5756,
+  "visited_exec_r010": 4027,
+  "coverage_task_r015": 0.7364,
+  "visited_exec_r015": 5152,
+  "coverage_known_free_r010": 0.5362,
+  "coverage_known_free_r015": 0.6855
+ }
+]

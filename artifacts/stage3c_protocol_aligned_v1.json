@@ -1,0 +1,49 @@
+{
+  "stage": "3C",
+  "protocol_version": "stage3c-aligned-v1",
+  "source_commit": "e3d80fbbd1663209f43e001f8782293389b8df34",
+  "world": "tunnel_worlds/worlds/branching_tunnel_y.sdf",
+  "map": "SLAM Toolbox live mapping (no static map; /map evolves during run)",
+  "initial_pose": {
+    "value": "PROTOCOL_BLOCKED",
+    "note": "not recorded in run_branching_y_01 artifacts; launch line used tb3 default (0,1) but unverified against the original driver"
+  },
+  "timeout_seconds": {
+    "value": "PROTOCOL_BLOCKED",
+    "note": "original driver ephemeral; run_01 reached completion candidate at 886 s yet terminated TIMEOUT, so an explicit cap existed but its value was not archived"
+  },
+  "stall_timeout_seconds": 240,
+  "stable_completion_window_s": {
+    "value": "PROTOCOL_BLOCKED",
+    "note": "completion_candidate_detected flag exists in benchmark_results.json; window length not archived"
+  },
+  "goal_success_definition": "goals_succeeded counted from Nav2 NavigateToPose action results (benchmark_results.json: goals_dispatched / goals_succeeded / goals_aborted)",
+  "revisit_definition": "unique_goal_bins = distinct 0.75 m goal bins (frontier_explorer loop-bin size); revisit ratio derived from visit history in benchmark_results.json",
+  "explorer_completion_definition": "stable_completion_detected over the stable window (benchmark_results.json flags)",
+  "coverage_threshold": null,
+  "seeds": [0, 1, 2, 3, 4],
+  "historical_results": {
+    "stage3d_formal_5run": {
+      "explorer_completion": "5/5",
+      "nav2_success": "100%",
+      "mean_unique_bins": 6.0,
+      "mean_revisit_ratio": 0.346,
+      "recovery_probes": "4/4",
+      "source": "commit e3d80fbb message (numbers from the ephemeral original driver)"
+    },
+    "stage3c_formal_5run": {
+      "explorer_completion": "2/5",
+      "source": "commit e3d80fbb message"
+    },
+    "stage3c_unaligned_retest_2026_09_04": {
+      "explorer_completion": "1/5",
+      "protocol": "run_stage3c_retest.py (90 s stable window, 1200 s cap, marker-empty + no-active-goal criterion) — NOT comparable to the above",
+      "aggregate": "artifacts/stage3c_retest_cloud/aggregate.json"
+    }
+  },
+  "comparability_rule": "historical 5/5 & 2/5 and the unaligned 1/5 are reported as separate groups; no direct promotion/demotion conclusion until the aligned 5-run below is executed with a restored driver that archives timeout + stable window + initial pose",
+  "aligned_5run": {
+    "status": "PROTOCOL_BLOCKED",
+    "blocker": "original driver not in git; timeout and stable-window values unrecoverable from artifacts (D2). Restore driver first, freeze values, then run seeds 0-4."
+  }
+}

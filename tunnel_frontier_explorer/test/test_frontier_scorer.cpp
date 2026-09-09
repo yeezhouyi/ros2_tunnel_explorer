@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 #include "tunnel_frontier_explorer/frontier_scorer.hpp"
 #include "tunnel_frontier_explorer/frontier_visit_history.hpp"
@@ -30,8 +30,9 @@ namespace tunnel_frontier_explorer
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Build a map with known dimensions.  All cells default to -1 (unknown).
-GridMap makeMap(std::size_t w, std::size_t h, double res = 0.1,
-                double ox = 0.0, double oy = 0.0)
+GridMap makeMap(
+  std::size_t w, std::size_t h, double res = 0.1,
+  double ox = 0.0, double oy = 0.0)
 {
   GridMap m;
   m.width = w;

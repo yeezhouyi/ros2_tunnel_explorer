@@ -1,0 +1,10 @@
+{
+ "map": "/home/zhouyi/ros2_tunnel_explorer/install/tunnel_worlds/share/tunnel_worlds/maps/cleaning_room_rect.yaml",
+ "known_free_cells": 7700,
+ "executable_cells": 6996,
+ "path_waypoints": 22,
+ "planned_coverage": 1.0,
+ "planner_reason": "OK",
+ "path_length_m": 60.75,
+ "speed_mps": 0.3
+}

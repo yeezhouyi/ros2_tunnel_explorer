@@ -1,0 +1,56 @@
+{
+ "run9_odom_bag": {
+  "r010": {
+   "plan_miss": 1348,
+   "exec_miss": 2625,
+   "visited_outside": 599,
+   "unreachable": 704,
+   "plan_covered_frac": 0.8073,
+   "visited_frac": 0.5156
+  },
+  "r015": {
+   "plan_miss": 212,
+   "exec_miss": 2473,
+   "visited_outside": 729,
+   "unreachable": 704,
+   "plan_covered_frac": 0.9697,
+   "visited_frac": 0.6162
+  }
+ },
+ "run10_odom_bag": {
+  "r010": {
+   "plan_miss": 1348,
+   "exec_miss": 2689,
+   "visited_outside": 367,
+   "unreachable": 704,
+   "plan_covered_frac": 0.8073,
+   "visited_frac": 0.5053
+  },
+  "r015": {
+   "plan_miss": 212,
+   "exec_miss": 2845,
+   "visited_outside": 467,
+   "unreachable": 704,
+   "plan_covered_frac": 0.9697,
+   "visited_frac": 0.5668
+  }
+ },
+ "run11_odom_bag": {
+  "r010": {
+   "plan_miss": 1348,
+   "exec_miss": 2686,
+   "visited_outside": 459,
+   "unreachable": 704,
+   "plan_covered_frac": 0.8073,
+   "visited_frac": 0.508
+  },
+  "r015": {
+   "plan_miss": 212,
+   "exec_miss": 2517,
+   "visited_outside": 509,
+   "unreachable": 704,
+   "plan_covered_frac": 0.9697,
+   "visited_frac": 0.6113
+  }
+ }
+}

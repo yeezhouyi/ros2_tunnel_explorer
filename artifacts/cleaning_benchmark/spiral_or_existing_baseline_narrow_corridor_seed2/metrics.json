@@ -1,0 +1,17 @@
+{
+  "planner": "spiral_or_existing_baseline",
+  "map_name": "narrow_corridor",
+  "seed": 2,
+  "planned_coverage": 1.0,
+  "executed_coverage": 1.0,
+  "visited_coverage": 0.32142857142857145,
+  "overlap_ratio": 0.0,
+  "path_length_m": 416.5642755033744,
+  "turn_count": 34,
+  "min_clearance_m": 0.5,
+  "planning_time_ms": 0.3007999998771993,
+  "tracking_rms_m": 0.0,
+  "fallback_count": 0,
+  "termination_reason": "OK",
+  "extra": {}
+}

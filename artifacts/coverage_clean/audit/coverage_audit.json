@@ -1,0 +1,23 @@
+{
+ "map_meta": {
+  "width": 120,
+  "height": 80,
+  "resolution": 0.05000000074505806,
+  "origin": [
+   -3.0,
+   -2.0
+  ]
+ },
+ "odom_samples": 26200,
+ "odom_path_length_m": 178.514,
+ "sweep_radius_m": 0.25,
+ "spacing_m": 0.28,
+ "known_free_cells": 7700,
+ "visited_free_cells": 5405,
+ "coverage_known_free": 0.7019,
+ "coverage_task_note": "task denominator = intended_target = known_free (cleanable_map_builder.cpp:263); exempt mask not recorded in this bag -> COVERAGE_METRIC denominator shown for known_free only",
+ "free_area_m2": 19.25,
+ "required_sweep_length_m": 68.8,
+ "actual_executed_path_length_m": 22.555,
+ "plan_undercoverage_ratio": 0.328
+}
