@@ -15,6 +15,7 @@
 ![隧道探索回放——首帧为完整轨迹 + 扫掠静态预览，第 31 帧起动画回放](results/demo_20260909/explore_replay.gif)
 
 > 记录的 `/odom` 轨迹回放。绿色区域为假定工具半径（0.15 m 盘片）下的扫掠示意；显示比例以轨迹包围矩形为分母，**不是**正式任务覆盖率。
+> 同跑 bag（~/b6_chain/explore_map_bag）含 /map 与 /odom，但未录 /tf，故不在此动图上加地图背景；按边界，须"拿到同一次运行对应的地图与坐标变换后"才合规。
 
 ```bash
 # 复现动图（render 子命令不依赖 ROS 2，只需 numpy + matplotlib + pillow）：
@@ -158,7 +159,7 @@ bash scripts/run_chain_audit.sh <run_dir>
 | `docs/stage3c_failure_analysis.md` | 阶段 3C 失败分析（3D 触发源） |
 | `docs/coverage_audit_u7.md`, `docs/known_issues.md`, `docs/merge_tree_note.md` | pre-seal 审计与合并树备注 |
 | `docs/jazzy_compatibility.md`, `docs/environment_feasibility.md` | ROS 2 Jazzy 插件命名 / 环境可行性 |
-| `docs/b6_demo.md`, `docs/advanced_round_resume.md` | B6 端到端录像（仿真）/ 进阶轮 ①②③④ 溯源矩阵 |
+| `docs/b6_demo.md`, `docs/advanced_round_resume.md` | B6 端到端联调记录（探索 + MPC 跟踪，非录像）/ 进阶轮 ①②③④ 溯源矩阵 |
 
 封板与归档标签：`v1.0.0-sealed` @ `b162fc1`（权威）、`v1.0.1-recovery-status` @ `5f89915`（恢复指针）。
 
