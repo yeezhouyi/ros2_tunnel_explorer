@@ -244,27 +244,31 @@ void CoverageExecutorNode::tickTimerCallback()
     switch (phase_) {
       case PHASE_TRANSITING:
       case PHASE_EXECUTING_SEGMENT: {
-        // Watchdog: a single Nav2 child goal must not run forever.
-          if (child_sent_) {
+        // Watchdog: a single Nav2 child goal must not run forever.  The
+        // cancel-vs-abandon decision comes from child_tracker_ (single
+        // source, unit-tested); abandon ALSO advances the generation so a
+        // stale late result of the old goal can never be accepted later.
+          if (child_tracker_.sent()) {
             const double run = (now() - child_send_time_).seconds();
-            if (run > child_goal_timeout_s_ + cancel_grace_s_) {
+            const WatchAction act = child_tracker_.watch(
+              run, child_goal_timeout_s_, cancel_grace_s_);
+            if (act == WatchAction::kAbandon) {
               RCLCPP_WARN(get_logger(),
               "Child goal stuck after %.1f s — forcing failure", run);
               pending_outcome_ = ChildOutcome{exec_index_, false};
-              // Invalidate any in-flight callbacks of the abandoned
-              // goal: a stale late result must not be accepted later.
-              ++child_gen_;
-              child_sent_ = false;
+              child_tracker_.abandon();
               nav_gh_.reset();
               follow_gh_.reset();
-            } else if (run > child_goal_timeout_s_) {
+            } else if (act == WatchAction::kCancel) {
               RCLCPP_WARN(get_logger(),
               "Child goal timeout after %.1f s — cancelling", run);
               if (nav_gh_) {
                 nav_client_->async_cancel_goal(nav_gh_);
+                child_tracker_.noteCancelSent();
               }
               if (follow_gh_) {
                 follow_client_->async_cancel_goal(follow_gh_);
+                child_tracker_.noteCancelSent();
               }
             }
           }
@@ -330,7 +334,7 @@ void CoverageExecutorNode::beginTask(
   map_changed_ = false;
   cancel_started_ = false;
   sampling_enabled_ = false;
-  child_sent_ = false;
+  child_tracker_.clear();
   pending_outcome_.reset();
   failure_class_.clear();
   terminal_result_ = RESULT_SUCCEEDED_FULL;
@@ -529,7 +533,7 @@ void CoverageExecutorNode::tickExecution()
     processOutcome(o.idx, o.ok);
     return;
   }
-  if (!child_sent_) {
+  if (!child_tracker_.sent()) {
     sendNextSegment();
   }
 }
@@ -690,42 +694,44 @@ void CoverageExecutorNode::sendNavigate(
   goal.pose.pose.orientation.z = std::sin(yaw * 0.5);
   goal.pose.pose.orientation.w = std::cos(yaw * 0.5);
 
-  // Fresh dispatch generation: callbacks still in flight from an older
-  // dispatch (watchdog-abandoned / superseded goal) carry a stale gen
-  // and are rejected, so late results cannot clobber the new task.
-  ++child_gen_;
-  const std::uint64_t gen = child_gen_;
+  // Fresh dispatch generation: child_tracker_ advances it on every dispatch
+  // and every abandon; callbacks capture the generation at dispatch and
+  // reject results whose generation is no longer current, so a stale late
+  // callback cannot clobber the new task's state (unit-tested policy).
+  const std::uint64_t gen = child_tracker_.dispatch();
   auto send_opts = NavClient::SendGoalOptions();
   send_opts.goal_response_callback =
     [this, gen](const NavClient::GoalHandle::SharedPtr & gh)
     {
-      if (gen != child_gen_) {return;}  // stale response
+      if (!child_tracker_.onGoalResponse(gen)) {
+        return;   // stale response (abandoned/superseded before it arrived)
+      }
       nav_gh_ = gh;
     };
   send_opts.result_callback =
     [this, idx = exec_index_, gen](
     const NavClient::GoalHandle::WrappedResult & r)
     {
-      if (gen != child_gen_) {
+      const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
+      const ChildResult disp = child_tracker_.onResult(
+        gen, phase_ == PHASE_CANCELLING);
+      if (disp == ChildResult::kStaleIgnored) {
         RCLCPP_WARN(get_logger(),
           "Stale NavigateToPose result ignored (gen %" PRIu64 " != %" PRIu64 ")",
           gen,
-          child_gen_);
+          child_tracker_.generation());
         return;
       }
-      const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
-      if (!ok && phase_ != PHASE_CANCELLING) {
-        RCLCPP_WARN(get_logger(), "NavigateToPose finished code=%d",
-          static_cast<int>(r.code));
-      }
       nav_gh_.reset();
-      child_sent_ = false;
-      if (phase_ != PHASE_CANCELLING) {
+      if (disp == ChildResult::kReady) {
+        if (!ok) {
+          RCLCPP_WARN(get_logger(), "NavigateToPose finished code=%d",
+            static_cast<int>(r.code));
+        }
         pending_outcome_ = ChildOutcome{idx, ok};
       }
     };
   nav_gh_.reset();
-  child_sent_ = true;
   child_send_time_ = now();
   nav_client_->async_send_goal(goal, send_opts);
 }
@@ -760,39 +766,40 @@ void CoverageExecutorNode::sendFollow(
   goal.path = std::move(path);
   goal.controller_id = "";
 
-  ++child_gen_;
-  const std::uint64_t gen = child_gen_;
+  const std::uint64_t gen = child_tracker_.dispatch();
   auto send_opts = FollowClient::SendGoalOptions();
   send_opts.goal_response_callback =
     [this, gen](const FollowClient::GoalHandle::SharedPtr & gh)
     {
-      if (gen != child_gen_) {return;}  // stale response
+      if (!child_tracker_.onGoalResponse(gen)) {
+        return;   // stale response (abandoned/superseded before it arrived)
+      }
       follow_gh_ = gh;
     };
   send_opts.result_callback =
     [this, idx = exec_index_, gen](
     const FollowClient::GoalHandle::WrappedResult & r)
     {
-      if (gen != child_gen_) {
+      const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
+      const ChildResult disp = child_tracker_.onResult(
+        gen, phase_ == PHASE_CANCELLING);
+      if (disp == ChildResult::kStaleIgnored) {
         RCLCPP_WARN(get_logger(),
           "Stale FollowPath result ignored (gen %" PRIu64 " != %" PRIu64 ")",
           gen,
-          child_gen_);
+          child_tracker_.generation());
         return;
       }
-      const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
-      if (!ok && phase_ != PHASE_CANCELLING) {
-        RCLCPP_WARN(get_logger(), "FollowPath finished code=%d",
-          static_cast<int>(r.code));
-      }
       follow_gh_.reset();
-      child_sent_ = false;
-      if (phase_ != PHASE_CANCELLING) {
+      if (disp == ChildResult::kReady) {
+        if (!ok) {
+          RCLCPP_WARN(get_logger(), "FollowPath finished code=%d",
+            static_cast<int>(r.code));
+        }
         pending_outcome_ = ChildOutcome{idx, ok};
       }
     };
   follow_gh_.reset();
-  child_sent_ = true;
   child_send_time_ = now();
   follow_client_->async_send_goal(goal, send_opts);
 }
@@ -836,6 +843,10 @@ bool CoverageExecutorNode::getRobotState(StopSample & state) const
     const double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
     const double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
     state.yaw = std::atan2(siny_cosp, cosy_cosp);
+    // Source stamp in seconds: stop-confirmation uses the REAL interval
+    // between two valid samples, never a fixed per-step conversion.
+    state.stamp_s = static_cast<double>(ts.header.stamp.sec) +
+      static_cast<double>(ts.header.stamp.nanosec) * 1e-9;
     return true;
   } catch (const tf2::TransformException & e) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
@@ -881,17 +892,20 @@ void CoverageExecutorNode::tickCancelling()
   // sample resets the quiet-streak and can only end in
   // STOP_CONFIRMATION_TIMEOUT, never in a successful cancel.  Both
   // translation and rotation (yaw) steps must stay within bounds for a
-  // sample to count as stationary.
+  // sample to count as stationary.  The per-step budgets are derived from
+  // the per-second thresholds and the REAL stamp-to-stamp interval, and a
+  // sample whose stamp does not advance (same TF re-read) is not a new
+  // observation and never counts toward the streak.
   StopSample cur;
   const bool have = getRobotState(cur);
-  const int cls = have ? classifyStopSample(
-    last_cancel_pose_, cur, stop_velocity_threshold_ * 0.2,
-    stop_yaw_threshold_radps_ * 0.2) : -1;
+  const int cls = have ? classifyStopSampleTimed(
+    last_cancel_pose_, cur, stop_velocity_threshold_,
+    stop_yaw_threshold_radps_) : -1;
   last_cancel_pose_ = have ? std::optional<StopSample>(cur) : std::nullopt;
   stop_samples_quiet_ = (cls == 0) ? (stop_samples_quiet_ + 1) : 0;
 
   const double elapsed = (now() - cancel_start_time_).seconds();
-  if (!child_sent_ && elapsed > 0.5 &&
+  if (!child_tracker_.sent() && elapsed > 0.5 &&
     stop_samples_quiet_ >= stop_confirm_samples_)
   {
     saveCheckpoint("cancel");

@@ -123,6 +123,14 @@ if(BUILD_TESTING)
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 
+  ament_add_gtest(test_child_goal_tracker
+    test/test_child_goal_tracker.cpp
+  )
+  target_link_libraries(test_child_goal_tracker coverage_executor_core)
+  target_include_directories(test_child_goal_tracker PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
   ament_add_gtest(test_terminal_coverage_gate
     test/test_terminal_coverage_gate.cpp
   )

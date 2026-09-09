@@ -31,6 +31,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 
 #include "tunnel_coverage_executor/checkpoint_store.hpp"
+#include "tunnel_coverage_executor/child_goal_tracker.hpp"
 #include "tunnel_coverage_executor/coverage_task_core.hpp"
 #include "tunnel_coverage_executor/stop_confirm.hpp"
 #include "tunnel_coverage_msgs/action/execute_coverage.hpp"
@@ -157,7 +158,6 @@ private:
   // Execution progress inside a segment.
   int exec_index_ = -1;
   int exec_attempt_ = 0;
-  bool child_sent_ = false;
   /// When the current child goal was sent (for the timeout watchdog).
   rclcpp::Time child_send_time_;
   /// Max seconds a single Nav2 child goal may run before being cancelled.
@@ -180,11 +180,11 @@ private:
   std::optional<StopSample> last_cancel_pose_;
   /// Consecutive valid samples observed stationary while cancelling.
   int stop_samples_quiet_ = 0;
-  /// Child-goal dispatch generation.  Incremented on every send and on
-  /// every forced abandonment; async callbacks capture the generation at
-  /// dispatch and reject results whose generation is no longer current,
-  /// so a stale late callback cannot clobber the new task's state.
-  std::uint64_t child_gen_ = 0;
+  /// Child-goal lifecycle policy (generation guard + timeout watchdog +
+  /// cancel bookkeeping).  Single source in child_goal_tracker.hpp: every
+  /// dispatch/response/result/watchdog event is routed through it so the
+  /// async-cancel behaviours are unit-tested by the SAME code that runs.
+  ChildGoalTracker child_tracker_;
 
   // ── TF sampling ────────────────────────────────────────────────────────
   std::optional<tunnel_map_core::Point2D> last_tool_pose_;
