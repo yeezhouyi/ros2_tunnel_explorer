@@ -4,7 +4,7 @@
 
 面向隧道式环境的 ROS 2 自主探索与覆盖任务原型，基于 Nav2 实现前沿选择、访问历史约束、覆盖执行与检查点恢复。当前运行证据来自 Gazebo 仿真，覆盖执行采用 **RotationShim + DWB**；独立开发的 MPC 控制器尚未接入该正式覆盖链（见 [已知限制](#已知限制)）。
 
-仓库负责 *上层规划与覆盖*：探索模式（前沿选点 → Nav2）与覆盖模式（扫描线规划 → Nav2 → 状态记录 / 覆盖审计）共用同一封板结果（`docs/seal_results.json`）。
+仓库负责 *上层规划与覆盖*：探索模式（前沿选点 → Nav2）与覆盖模式（扫描线规划 → Nav2 → 状态记录 / 覆盖审计）。覆盖链结果来自封板 `docs/seal_results.json`；探索结果来自对应阶段档案（[关键结果](#关键结果)）。
 
 ---
 
@@ -35,7 +35,7 @@ python scripts/make_explore_demo.py extract \
 
 - **分析与缓解重复访问、入口振荡**：5 跑阶段对照显示，仅引入信息增益 + 重访惩罚就把探索完成时间中位数从 281.5 s 压到 156.0 s（−44.6%），并在入口环场景把平均重访率从 49.3% 降到 34.6%（见 [关键结果](#关键结果)）。
 - **实现覆盖任务执行与恢复**：检查点按摘要原子拒绝不完整写入；覆盖执行器把"是否完成"与"实际扫到多少"两件事分开审计，并按残差预算决策是否追加恢复路径。
-- **区分任务完成与实际面积覆盖**：所有公开数字都来自同一封板 JSON（`docs/seal_results.json`），分母为受服务地图可执行掩码（含 36–37/37 段覆盖率），不会与轨迹包围矩形等视觉估算混淆。
+- **区分任务完成与实际面积覆盖**：覆盖链结果来自封板 JSON（`docs/seal_results.json`），分母为受服务地图可执行掩码（含 36–37/37 段覆盖率）；探索结果来自对应阶段档案（[关键结果](#关键结果)）。口径不与轨迹包围矩形等视觉估算混淆。
 
 ---
 
@@ -47,22 +47,24 @@ python scripts/make_explore_demo.py extract \
 flowchart TB
   subgraph 探索模式["探索模式"]
     direction LR
-    SLAM["地图 / 定位<br/>(slam_toolbox / AMCL)"] --> NAV2E["Nav2<br/>(RotationShim + DWB)"] --> FRONT["前沿选点<br/>(探测 + 黑名单 + 信息增益/重访评分)"]
+    SLAM["地图 / 定位<br/>(slam_toolbox / AMCL)"] --> FRONT["前沿选点<br/>(探测 + 黑名单 + 信息增益/重访评分)"]
+    FRONT -- "导航目标" --> NAV2E["Nav2<br/>(RotationShim + DWB)"]
+    NAV2E -. "反馈 / 结果" .-> FRONT
   end
   subgraph 覆盖模式["覆盖模式"]
     direction LR
-    MAP["静态地图<br/>(served-map)"] --> PLAN["覆盖规划<br/>(扫描线 + 检查点)"] --> EXEC["覆盖执行器<br/>(状态机 + 恢复)"] --> NAV2C["Nav2<br/>(RotationShim + DWB)"]
+    MAP["静态地图<br/>(served-map)"] --> PLAN["覆盖规划<br/>(扫描线 + 检查点)"] --> EXEC["覆盖执行器<br/>(状态机 + 恢复)"]
+    EXEC -- "段目标" --> NAV2C["Nav2<br/>(RotationShim + DWB)"]
+    NAV2C -. "反馈 / 结果" .-> EXEC
     EXEC --> CHECK["检查点存储<br/>(摘要原子写)"]
   end
   AUDIT["覆盖审计<br/>(executor_effective / 段账本)"] --> SEAL["docs/seal_results.json<br/>(封板单一来源)"]
   EXEC --> AUDIT
   PLAN -. 长度验证 .-> AUDIT
-  NAV2E -. 驱动 .-> FRONT
-  NAV2C -. 驱动 .-> EXEC
 ```
 
-- **探索路径**：地图/定位 → Nav2 → 前沿选点（闭环）。
-- **覆盖路径**：静态地图 → 覆盖规划/执行器 → Nav2，旁路写到检查点存储与覆盖审计，最后落到封板 JSON。
+- **探索路径**：地图/定位 → 前沿选点 → Nav2。实线为发送导航目标（命令方向），虚线为 Nav2 的执行反馈与结果（闭环）。
+- **覆盖路径**：静态地图 → 覆盖规划/执行器 → Nav2，实线为发送段目标；执行器旁路写到检查点存储与覆盖审计，审计结果落到封板 JSON。
 - **Nav2 插件集成**（独立小图，不属于上述任一路径）：
 
   ```mermaid
@@ -129,7 +131,7 @@ bash scripts/run_chain_audit.sh <run_dir>
 
 ## 已知限制
 
-- **CI 不跑覆盖链烟测**——4 次正式跑约 1.5 小时，由维护者在本机执行；CI 仅做编译、lint、单元测试。徽章反映 CI 状态，非覆盖跑。
+- **CI 不跑覆盖链冒烟测试**——4 次正式跑约 1.5 小时，由维护者在本机执行；CI 仅做编译、lint、单元测试。徽章反映 CI 状态，非覆盖跑。
 - **原始 `/odom` 包未入库**——仓库里 `track.npz` 是同场景 29.5 min 真实采样的下采样回放；要换场景需要重跑 `run_chain_audit.sh`。
 - **覆盖率口径不能互换**——`r015`（0.15 m 足迹）是头版数字（`coverage_task.mean ≈ 0.628`），`r010`（0.10 m）给出保守区间（约 −20%）。两个数一并展示。
 - **数量校正直觉**：受服务地图掩码是覆盖规范；不要按 `b6_chain/map_saved.yaml`（SLAM 坐标系，原点 ≈ −2.95 / −3.67）做分母——历史数字已撤回。
@@ -144,7 +146,7 @@ bash scripts/run_chain_audit.sh <run_dir>
 
 | 文件 | 内容 |
 |---|---|
-| `docs/seal_results.json` | 封板单一来源（所有公开数字必须由此出） |
+| `docs/seal_results.json` | 封板单一来源（覆盖链公开数字由此出） |
 | `docs/coverage_recovery_status.md` | 残差覆盖恢复预算决策 |
 | `docs/chain_semantics.md` | 覆盖口径定义、坐标系修正 |
 | `docs/day68_chain_audit.md` | 覆盖链语义、post-seal2 处置 |
