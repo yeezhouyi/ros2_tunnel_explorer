@@ -32,6 +32,7 @@
 
 #include "tunnel_coverage_executor/checkpoint_store.hpp"
 #include "tunnel_coverage_executor/coverage_task_core.hpp"
+#include "tunnel_coverage_executor/stop_confirm.hpp"
 #include "tunnel_coverage_msgs/action/execute_coverage.hpp"
 #include "tunnel_coverage_msgs/msg/coverage_status.hpp"
 #include "tunnel_coverage_planner/cleanable_map_builder.hpp"
@@ -113,6 +114,10 @@ private:
   double goal_clamp_inset_m_ = 0.10;
   double stop_velocity_threshold_;
   double stop_confirm_timeout_s_;
+  /// Per-tick rotation step that still counts as "stationary" (rad).
+  double stop_yaw_threshold_radps_ = 0.15;
+  /// Consecutive valid quiet samples needed to confirm a stop.
+  int stop_confirm_samples_ = 3;
   double min_effective_coverage_;
   int max_attempts_per_segment_;
   std::string checkpoint_dir_;
@@ -172,7 +177,14 @@ private:
   bool map_changed_ = false;
   bool cancel_started_ = false;
   rclcpp::Time cancel_start_time_;
-  std::optional<tunnel_map_core::Point2D> last_cancel_pose_;
+  std::optional<StopSample> last_cancel_pose_;
+  /// Consecutive valid samples observed stationary while cancelling.
+  int stop_samples_quiet_ = 0;
+  /// Child-goal dispatch generation.  Incremented on every send and on
+  /// every forced abandonment; async callbacks capture the generation at
+  /// dispatch and reject results whose generation is no longer current,
+  /// so a stale late callback cannot clobber the new task's state.
+  std::uint64_t child_gen_ = 0;
 
   // ── TF sampling ────────────────────────────────────────────────────────
   std::optional<tunnel_map_core::Point2D> last_tool_pose_;
@@ -185,6 +197,8 @@ private:
 
   // ── Helpers ────────────────────────────────────────────────────────────
   bool getRobotPose(tunnel_map_core::Point2D & pose) const;
+  /// Sample the full robot state (x, y, yaw) for stop confirmation.
+  bool getRobotState(StopSample & state) const;
   void publishStatus();
   void setPhase(int phase);
   void beginTask(std::shared_ptr<CovGoalHandle> goal_handle);

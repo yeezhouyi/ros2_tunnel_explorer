@@ -23,6 +23,7 @@ add_library(coverage_executor_core STATIC
   src/checkpoint_store.cpp
   src/coverage_task_core.cpp
   src/goal_clamp.cpp
+  src/stop_confirm.cpp
 )
 
 target_include_directories(coverage_executor_core
@@ -111,6 +112,22 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_task_core coverage_executor_core)
   target_include_directories(test_task_core PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_stop_confirm
+    test/test_stop_confirm.cpp
+  )
+  target_link_libraries(test_stop_confirm coverage_executor_core)
+  target_include_directories(test_stop_confirm PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+
+  ament_add_gtest(test_terminal_coverage_gate
+    test/test_terminal_coverage_gate.cpp
+  )
+  target_link_libraries(test_terminal_coverage_gate coverage_executor_core)
+  target_include_directories(test_terminal_coverage_gate PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   )
 endif()

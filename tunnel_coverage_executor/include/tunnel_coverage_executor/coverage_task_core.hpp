@@ -99,6 +99,19 @@ public:
   /// Human-readable terminal class.
   static std::string terminalName(std::int32_t result);
 
+  /// Coverage gate applied on top of @p core_terminal.
+  ///
+  /// ``effective_coverage`` already excludes exempt regions, so reaching
+  /// a SUCCEEDED_* class must also clear @p min_effective — exemptions
+  /// explain *why* parts are un-cleaned, they do not excuse missing the
+  /// bar on the remainder.  When the bar is missed both SUCCEEDED_FULL
+  /// and SUCCEEDED_WITH_EXEMPTIONS collapse to RESULT_PARTIAL_FAILED;
+  /// non-success terminals pass through unchanged.
+  static std::int32_t resolveCoverageGate(
+    std::int32_t core_terminal,
+    double effective_coverage,
+    double min_effective);
+
   /// Copy dispositions from a validated checkpoint into a new plan.
   ///
   /// The checkpoint and the new plan must carry the *same* segment ids

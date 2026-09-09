@@ -71,6 +71,10 @@ CoverageExecutorNode::CoverageExecutorNode()
     "stop_velocity_threshold_mps", 0.05);
   stop_confirm_timeout_s_ = declare_parameter<double>(
     "stop_confirm_timeout_s", 8.0);
+  stop_yaw_threshold_radps_ = declare_parameter<double>(
+    "stop_yaw_threshold_radps", 0.15);
+  stop_confirm_samples_ = declare_parameter<int>(
+    "stop_confirm_samples", 3);
   min_effective_coverage_ = declare_parameter<double>(
     "min_effective_coverage", 0.97);
   max_attempts_per_segment_ = declare_parameter<int>(
@@ -246,6 +250,9 @@ void CoverageExecutorNode::tickTimerCallback()
               RCLCPP_WARN(get_logger(),
               "Child goal stuck after %.1f s — forcing failure", run);
               pending_outcome_ = ChildOutcome{exec_index_, false};
+              // Invalidate any in-flight callbacks of the abandoned
+              // goal: a stale late result must not be accepted later.
+              ++child_gen_;
               child_sent_ = false;
               nav_gh_.reset();
               follow_gh_.reset();
@@ -449,11 +456,12 @@ void CoverageExecutorNode::sendNextSegment()
     if (below_threshold && failure_class_.empty()) {
       failure_class_ = "COVERAGE_BELOW_THRESHOLD";
     }
-    terminal_result_ = core_->terminalResult();
-    if (below_threshold && terminal_result_ == RESULT_SUCCEEDED_FULL) {
-      terminal_result_ = m.exempt_ratio > 1e-9 ?
-        RESULT_SUCCEEDED_WITH_EXEMPTIONS : RESULT_PARTIAL_FAILED;
-    }
+    // Effective coverage already excludes exempt regions, so the bar
+    // applies to BOTH success classes: exempt_ratio labels why parts are
+    // un-cleaned, it never excuses missing min_effective_coverage.
+    terminal_result_ = CoverageTaskCore::resolveCoverageGate(
+      core_->terminalResult(), m.effective_coverage,
+      min_effective_coverage_);
     saveCheckpoint("terminal");
     finishTask();
     return;
@@ -681,13 +689,29 @@ void CoverageExecutorNode::sendNavigate(
   goal.pose.pose.orientation.z = std::sin(yaw * 0.5);
   goal.pose.pose.orientation.w = std::cos(yaw * 0.5);
 
+  // Fresh dispatch generation: callbacks still in flight from an older
+  // dispatch (watchdog-abandoned / superseded goal) carry a stale gen
+  // and are rejected, so late results cannot clobber the new task.
+  ++child_gen_;
+  const std::uint64_t gen = child_gen_;
   auto send_opts = NavClient::SendGoalOptions();
   send_opts.goal_response_callback =
-    [this](const NavClient::GoalHandle::SharedPtr & gh) {nav_gh_ = gh;};
+    [this, gen](const NavClient::GoalHandle::SharedPtr & gh)
+    {
+      if (gen != child_gen_) {return;}  // stale response
+      nav_gh_ = gh;
+    };
   send_opts.result_callback =
-    [this, idx = exec_index_](
+    [this, idx = exec_index_, gen](
     const NavClient::GoalHandle::WrappedResult & r)
     {
+      if (gen != child_gen_) {
+        RCLCPP_WARN(get_logger(),
+          "Stale NavigateToPose result ignored (gen %llu != %llu)",
+          static_cast<unsigned long long>(gen),
+          static_cast<unsigned long long>(child_gen_));
+        return;
+      }
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
       if (!ok && phase_ != PHASE_CANCELLING) {
         RCLCPP_WARN(get_logger(), "NavigateToPose finished code=%d",
@@ -735,14 +759,26 @@ void CoverageExecutorNode::sendFollow(
   goal.path = std::move(path);
   goal.controller_id = "";
 
+  ++child_gen_;
+  const std::uint64_t gen = child_gen_;
   auto send_opts = FollowClient::SendGoalOptions();
   send_opts.goal_response_callback =
-    [this](const FollowClient::GoalHandle::SharedPtr & gh)
-    {follow_gh_ = gh;};
+    [this, gen](const FollowClient::GoalHandle::SharedPtr & gh)
+    {
+      if (gen != child_gen_) {return;}  // stale response
+      follow_gh_ = gh;
+    };
   send_opts.result_callback =
-    [this, idx = exec_index_](
+    [this, idx = exec_index_, gen](
     const FollowClient::GoalHandle::WrappedResult & r)
     {
+      if (gen != child_gen_) {
+        RCLCPP_WARN(get_logger(),
+          "Stale FollowPath result ignored (gen %llu != %llu)",
+          static_cast<unsigned long long>(gen),
+          static_cast<unsigned long long>(child_gen_));
+        return;
+      }
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
       if (!ok && phase_ != PHASE_CANCELLING) {
         RCLCPP_WARN(get_logger(), "FollowPath finished code=%d",
@@ -774,6 +810,31 @@ bool CoverageExecutorNode::getRobotPose(tunnel_map_core::Point2D & pose) const
     }
     pose.x = ts.transform.translation.x;
     pose.y = ts.transform.translation.y;
+    return true;
+  } catch (const tf2::TransformException & e) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+      "TF lookup failed: %s", e.what());
+    return false;
+  }
+}
+
+bool CoverageExecutorNode::getRobotState(StopSample & state) const
+{
+  try {
+    const auto ts = tf_buffer_.lookupTransform(
+      global_frame_, base_frame_, tf2::TimePointZero,
+      std::chrono::milliseconds(80));
+    const double age = (now() - ts.header.stamp).seconds();
+    if (age > max_tf_age_s_) {
+      return false;
+    }
+    state.x = ts.transform.translation.x;
+    state.y = ts.transform.translation.y;
+    // Yaw about Z from the transform quaternion (REP-103).
+    const auto & q = ts.transform.rotation;
+    const double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
+    const double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+    state.yaw = std::atan2(siny_cosp, cosy_cosp);
     return true;
   } catch (const tf2::TransformException & e) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
@@ -814,17 +875,24 @@ void CoverageExecutorNode::tickCancelling()
     return;
   }
 
-  // Stop confirmation via TF displacement between consecutive ticks.
-  tunnel_map_core::Point2D pose;
-  const bool have_pose = getRobotPose(pose);
-  const bool moving = have_pose && last_cancel_pose_ &&
-    dist2d(pose.x, pose.y, last_cancel_pose_->x, last_cancel_pose_->y) >
-    stop_velocity_threshold_ * 0.2;
-  last_cancel_pose_ =
-    have_pose ? std::optional<tunnel_map_core::Point2D>(pose) : std::nullopt;
+  // Stop confirmation from consecutive VALID samples.  "Not observed
+  // moving" (TF lookup failed) is not "observed stopped": a missing
+  // sample resets the quiet-streak and can only end in
+  // STOP_CONFIRMATION_TIMEOUT, never in a successful cancel.  Both
+  // translation and rotation (yaw) steps must stay within bounds for a
+  // sample to count as stationary.
+  StopSample cur;
+  const bool have = getRobotState(cur);
+  const int cls = have ? classifyStopSample(
+    last_cancel_pose_, cur, stop_velocity_threshold_ * 0.2,
+    stop_yaw_threshold_radps_ * 0.2) : -1;
+  last_cancel_pose_ = have ? std::optional<StopSample>(cur) : std::nullopt;
+  stop_samples_quiet_ = (cls == 0) ? (stop_samples_quiet_ + 1) : 0;
 
   const double elapsed = (now() - cancel_start_time_).seconds();
-  if (!child_sent_ && !moving && elapsed > 0.5) {
+  if (!child_sent_ && elapsed > 0.5 &&
+    stop_samples_quiet_ >= stop_confirm_samples_)
+  {
     saveCheckpoint("cancel");
     terminal_result_ = map_changed_ ? RESULT_MAP_CHANGED : RESULT_CANCELLED;
     if (map_changed_) {

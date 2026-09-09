@@ -126,6 +126,26 @@ std::int32_t CoverageTaskCore::terminalResult() const
   return RESULT_PARTIAL_FAILED;
 }
 
+std::int32_t CoverageTaskCore::resolveCoverageGate(
+  std::int32_t core_terminal,
+  double effective_coverage,
+  double min_effective)
+{
+  if (core_terminal != RESULT_SUCCEEDED_FULL &&
+    core_terminal != RESULT_SUCCEEDED_WITH_EXEMPTIONS)
+  {
+    // Cancelled / map-changed / stop-failed / partial stay as-is.
+    return core_terminal;
+  }
+  if (effective_coverage + 1e-9 >= min_effective) {
+    // Bar cleared: keep the core class (exemptions still reported).
+    return core_terminal;
+  }
+  // Bar missed: a leftover exempt_ratio cannot re-brand under-coverage
+  // as success (the effective metric already excluded the exempt area).
+  return RESULT_PARTIAL_FAILED;
+}
+
 std::string CoverageTaskCore::terminalName(std::int32_t result)
 {
   switch (result) {

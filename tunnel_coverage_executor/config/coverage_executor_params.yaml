@@ -13,6 +13,8 @@ tunnel_coverage_executor:
     endpoint_tolerance_m: 0.15
     stop_velocity_threshold_mps: 0.05
     stop_confirm_timeout_s: 8.0
+    stop_yaw_threshold_radps: 0.15
+    stop_confirm_samples: 3
     min_effective_coverage: 0.97
     max_attempts_per_segment: 2
 
