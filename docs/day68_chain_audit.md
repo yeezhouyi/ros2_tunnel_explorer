@@ -322,3 +322,33 @@ Sealing criteria, verbatim from the ruling:
   would turn every legitimate algorithm change into a two-sided
   lockstep file update -- maintenance burden.  Three orthogonal
   oracles > per-layer lockstep files.
+
+
+## Missed-coverage classification + overlay (tunnel P0, 2026-09-09)
+
+Review ruling: before adding any planner, find WHERE the uncovered area
+is lost.  Tool: (linear repo) benchmark_tools/scripts/
+classify_missed_coverage.py -- planned-path sweep and actual-odom sweep
+marked at the audit gauges on the rect masks, then every executable cell
+classified.  Alignment: plan frame shifted into the mask frame by the
+npz shift (-2.625, -1.375); odometry at the canonical physical shift
+(0, 0).  Artifacts: artifacts/miss_classification/ (overlay PNGs +
+JSON + table).
+
+r015 gauge, executable = 6996 cells:
+
+| run | plan_miss | exec_miss | visited_outside | unreachable | plan_cov | visited |
+|---|---|---|---|---|---|---|
+| run9 | 212 | 2473 | 729 | 704 | 0.9697 | 0.6162 |
+| run10 | 212 | 2845 | 467 | 704 | 0.9697 | 0.5668 |
+| run11 | 212 | 2517 | 509 | 704 | 0.9697 | 0.6113 |
+
+Verdict per the ruling: the DOMINANT loss source is EXECUTION DEVIATION
+(planned but not executed: ~35-41 % of the executable area), NOT
+planning (plan misses only 3 % at r015).  visited_outside (0.5-0.7 k
+cells) is the localisation/projection statistical bucket; unreachable
+(704) is the scene itself.  At r010 the plan miss jumps to 1348 (19 %)
+-- the 0.30 m lane width leaves inter-lane strips at the tighter gauge:
+recorded as a SIMULATION tool-width assumption, not a measured
+parameter (per ruling).  Consequence: fixes belong to execution
+(tracking tightness / connector speed), not a new planner.
