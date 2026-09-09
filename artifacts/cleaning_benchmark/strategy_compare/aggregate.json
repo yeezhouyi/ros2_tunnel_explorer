@@ -1,0 +1,137 @@
+{
+ "boustrophedon_astar|open_room": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 414.50000000002575,
+  "revisit": 0.0,
+  "turns": 66,
+  "tms": 14.374363000001722
+ },
+ "boustrophedon_astar|room_with_islands": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 517.3000000000491,
+  "revisit": 0.1527,
+  "turns": 139,
+  "tms": 19.85700400001633
+ },
+ "boustrophedon_astar|narrow_corridor": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 219.29999999999183,
+  "revisit": 0.0,
+  "turns": 34,
+  "tms": 7.16159000000971
+ },
+ "row_by_row|open_room": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 797.4247700948157,
+  "revisit": 0.0,
+  "turns": 66,
+  "tms": 0.5427610000197092
+ },
+ "row_by_row|room_with_islands": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 797.4247700948141,
+  "revisit": 0.0,
+  "turns": 90,
+  "tms": 0.5512200000055145
+ },
+ "row_by_row|narrow_corridor": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 416.5642755033744,
+  "revisit": 0.0,
+  "turns": 34,
+  "tms": 0.2692029999877832
+ },
+ "astar_greedy|open_room": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 1199.9000000000042,
+  "revisit": 0.0,
+  "turns": 198,
+  "tms": 33.495479999999134
+ },
+ "astar_greedy|room_with_islands": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 1237.5778787337767,
+  "revisit": 0.0186,
+  "turns": 276,
+  "tms": 55.737064999988206
+ },
+ "astar_greedy|narrow_corridor": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 671.9000000000842,
+  "revisit": 0.0,
+  "turns": 110,
+  "tms": 18.842265000017733
+ },
+ "rrt_greedy|open_room": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 1199.9000000000042,
+  "revisit": 0.0,
+  "turns": 198,
+  "tms": 534.6069999999941
+ },
+ "rrt_greedy|room_with_islands": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 1174.3000000000275,
+  "revisit": 0.0,
+  "turns": 270,
+  "tms": 514.8845410000149
+ },
+ "rrt_greedy|narrow_corridor": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 671.9000000000842,
+  "revisit": 0.0,
+  "turns": 110,
+  "tms": 245.87847399999418
+ },
+ "hybrid_astar_greedy|open_room": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 2957.7640030816624,
+  "revisit": 0.5581,
+  "turns": 805,
+  "tms": 8019.406262000019
+ },
+ "hybrid_astar_greedy|room_with_islands": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 3420.802394057575,
+  "revisit": 0.6295,
+  "turns": 1065,
+  "tms": 5044.818227000007
+ },
+ "hybrid_astar_greedy|narrow_corridor": {
+  "n": 5,
+  "ok": 5,
+  "fpcov": 1.0,
+  "length": 1526.2018320752015,
+  "revisit": 0.529,
+  "turns": 457,
+  "tms": 1043.0702819999738
+ }
+}

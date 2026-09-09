@@ -1,0 +1,21 @@
+{
+  "planner": "astar_greedy",
+  "map_name": "open_room",
+  "seed": 0,
+  "planned_coverage": 1.0,
+  "executed_coverage": 1.0,
+  "visited_coverage": 1.0,
+  "overlap_ratio": 0.0,
+  "path_length_m": 1199.9000000000042,
+  "turn_count": 198,
+  "min_clearance_m": Infinity,
+  "planning_time_ms": 33.495479999999134,
+  "tracking_rms_m": 0.0,
+  "fallback_count": 0,
+  "termination_reason": "OK",
+  "extra": {
+    "footprint_coverage": 1.0,
+    "revisit_ratio": 0.0,
+    "path_points": 12000
+  }
+}
