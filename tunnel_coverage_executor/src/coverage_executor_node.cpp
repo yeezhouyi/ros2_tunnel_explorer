@@ -262,13 +262,21 @@ void CoverageExecutorNode::tickTimerCallback()
             } else if (act == WatchAction::kCancel) {
               RCLCPP_WARN(get_logger(),
               "Child goal timeout after %.1f s — cancelling", run);
-              if (nav_gh_) {
-                nav_client_->async_cancel_goal(nav_gh_);
-                child_tracker_.noteCancelSent();
-              }
-              if (follow_gh_) {
-                follow_client_->async_cancel_goal(follow_gh_);
-                child_tracker_.noteCancelSent();
+              // One transport is active per child goal.  Cancel on the known
+              // handle; if the goal_response never arrived there is no
+              // handle yet, so remember the stop request and cancel the
+              // goal the moment the late handle arrives (kStoreAndCancel).
+              if (nav_gh_ || follow_gh_) {
+                if (nav_gh_) {
+                  nav_client_->async_cancel_goal(nav_gh_);
+                  child_tracker_.noteCancelSent();
+                }
+                if (follow_gh_) {
+                  follow_client_->async_cancel_goal(follow_gh_);
+                  child_tracker_.noteCancelSent();
+                }
+              } else {
+                child_tracker_.requestCancel();
               }
             }
           }
@@ -703,10 +711,20 @@ void CoverageExecutorNode::sendNavigate(
   send_opts.goal_response_callback =
     [this, gen](const NavClient::GoalHandle::SharedPtr & gh)
     {
-      if (!child_tracker_.onGoalResponse(gen)) {
-        return;   // stale response (abandoned/superseded before it arrived)
+      switch (child_tracker_.onGoalResponse(gen)) {
+        case ResponseAction::kStale:
+          return;   // abandoned/superseded before the server answered
+        case ResponseAction::kStoreAndCancel: {
+          // Stop was requested before this handle arrived: cancel the goal
+          // NOW on the transport instead of storing a running goal.
+            nav_client_->async_cancel_goal(gh);
+            child_tracker_.noteCancelSent();
+            return;
+          }
+        case ResponseAction::kStoreOnly:
+          nav_gh_ = gh;
+          return;
       }
-      nav_gh_ = gh;
     };
   send_opts.result_callback =
     [this, idx = exec_index_, gen](
@@ -771,10 +789,20 @@ void CoverageExecutorNode::sendFollow(
   send_opts.goal_response_callback =
     [this, gen](const FollowClient::GoalHandle::SharedPtr & gh)
     {
-      if (!child_tracker_.onGoalResponse(gen)) {
-        return;   // stale response (abandoned/superseded before it arrived)
+      switch (child_tracker_.onGoalResponse(gen)) {
+        case ResponseAction::kStale:
+          return;   // abandoned/superseded before the server answered
+        case ResponseAction::kStoreAndCancel: {
+          // Stop was requested before this handle arrived: cancel the goal
+          // NOW on the transport instead of storing a running goal.
+            follow_client_->async_cancel_goal(gh);
+            child_tracker_.noteCancelSent();
+            return;
+          }
+        case ResponseAction::kStoreOnly:
+          follow_gh_ = gh;
+          return;
       }
-      follow_gh_ = gh;
     };
   send_opts.result_callback =
     [this, idx = exec_index_, gen](
@@ -877,12 +905,19 @@ void CoverageExecutorNode::tickCancelling()
   if (!cancel_started_) {
     cancel_started_ = true;
     cancel_start_time_ = now();
-    // Cancel the unique child goal (R21).
+    // Remember the stop request even when no handle is known yet: a goal
+    // whose goal_response arrives LATER must be cancelled on arrival
+    // (goal_response callback, kStoreAndCancel), not stored and left
+    // running -- the review's "cancel first, goal handle later" ordering.
+    child_tracker_.requestCancel();
+    // Cancel the unique child goal (R21) on its known handle.
     if (nav_gh_) {
       nav_client_->async_cancel_goal(nav_gh_);
+      child_tracker_.noteCancelSent();
     }
     if (follow_gh_) {
       follow_client_->async_cancel_goal(follow_gh_);
+      child_tracker_.noteCancelSent();
     }
     return;
   }

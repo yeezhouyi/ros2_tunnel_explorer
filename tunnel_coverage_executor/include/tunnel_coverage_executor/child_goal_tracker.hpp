@@ -26,6 +26,13 @@
 //     actually asked to stop (async_cancel was issued while its handle was
 //     known) before it was abandoned (handle dropped, generation advanced).
 //
+// Cancel-before-handle ordering: when a stop is requested while the server
+// has not yet answered goal_response there is nothing to cancel yet; the
+// request is remembered (requestCancel/cancelWanted) and the LATE goal
+// response is answered with ResponseAction::kStoreAndCancel so the transport
+// issues async_cancel the moment the handle exists -- it is never merely
+// stored and left running (review: "cancel first, goal handle later").
+//
 // One instance tracks the single logical child goal (nav OR follow).  The
 // node still owns the rclcpp handles/timers and the exec/segment state.
 #ifndef TUNNEL_COVERAGE_EXECUTOR__CHILD_GOAL_TRACKER_HPP_
@@ -53,6 +60,16 @@ enum class WatchAction
   kAbandon    // run_s > timeout + grace: force-fail, stop waiting forever
 };
 
+/// What a goal_response callback must do with the arrived goal handle.
+enum class ResponseAction
+{
+  kStale,           // response of an abandoned/superseded goal: drop it
+  kStoreOnly,       // current goal, nothing pending: store the handle
+  kStoreAndCancel   // current goal but a stop was requested BEFORE the
+                    // handle arrived: issue async_cancel on it IMMEDIATELY,
+                    // never leave it running (late-handle cancel)
+};
+
 /// Child-goal lifecycle policy (see file comment).
 class ChildGoalTracker
 {
@@ -63,6 +80,7 @@ public:
   {
     sent_ = false;
     handle_known_ = false;
+    cancel_wanted_ = false;
     cancel_asked_ = false;
   }
 
@@ -73,6 +91,7 @@ public:
     ++gen_;
     sent_ = true;
     handle_known_ = false;
+    cancel_wanted_ = false;
     cancel_asked_ = false;
     return gen_;
   }
@@ -91,16 +110,35 @@ public:
   /// (noteCancelSent is only called on the transport paths that send it).
   bool cancelAsked() const {return cancel_asked_;}
 
-  /// goal_response_callback: store the handle if the response is current.
-  /// A response that arrives after an abandon/supersede (cancel requested
-  /// before the server answered) is stale and must be dropped.
-  bool onGoalResponse(std::uint64_t g)
+  /// Remember that a stop was requested for the current goal even though
+  /// its handle is not known yet.  When the late goal_response arrives the
+  /// caller MUST issue async_cancel on it (see onGoalResponse).
+  void requestCancel()
+  {
+    if (sent_) {
+      cancel_wanted_ = true;
+    }
+  }
+
+  /// True while a stop for the current goal is requested but has not been
+  /// delivered to a known handle yet.
+  bool cancelWanted() const {return cancel_wanted_;}
+
+  /// goal_response_callback.  A response of an abandoned/superseded goal is
+  /// stale and must be dropped.  A current goal whose stop was requested
+  /// before the handle arrived must be answered with kStoreAndCancel so the
+  /// transport cancels it immediately instead of storing and leaving it
+  /// running.  Otherwise the handle is stored for the caller.
+  ResponseAction onGoalResponse(std::uint64_t g)
   {
     if (g != gen_) {
-      return false;
+      return ResponseAction::kStale;
     }
     handle_known_ = true;
-    return true;
+    if (cancel_wanted_ && !cancel_asked_) {
+      return ResponseAction::kStoreAndCancel;
+    }
+    return ResponseAction::kStoreOnly;
   }
 
   /// result_callback.  A stale result never mutates state; a current result
@@ -113,6 +151,7 @@ public:
     }
     sent_ = false;
     handle_known_ = false;
+    cancel_wanted_ = false;
     cancel_asked_ = false;
     if (cancelling_phase) {
       return ChildResult::kClearedCancelling;
@@ -126,6 +165,7 @@ public:
   {
     if (sent_) {
       cancel_asked_ = true;
+      cancel_wanted_ = false;
     }
   }
 
@@ -151,6 +191,7 @@ public:
     ++gen_;
     sent_ = false;
     handle_known_ = false;
+    cancel_wanted_ = false;
     cancel_asked_ = false;
   }
 
@@ -158,6 +199,10 @@ private:
   std::uint64_t gen_ = 0;
   bool sent_ = false;
   bool handle_known_ = false;
+  /// A stop was requested for the current goal (requestCancel) but has not
+  /// been delivered to a known handle yet (see kStoreAndCancel).
+  bool cancel_wanted_ = false;
+  /// async_cancel was actually delivered for the current goal.
   bool cancel_asked_ = false;
 };
 
