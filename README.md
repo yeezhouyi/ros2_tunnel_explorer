@@ -1,277 +1,181 @@
 # ros2_tunnel_explorer
 
-**A ROS 2 autonomous-exploration and risk-aware coverage system for tunnel-like
-environments.** It picks frontiers under Nav2 (RotationShim + DWB), ranks them
-by information gain / revisit cost, executes the chain through a coverage
-executor that runs a boustrophedon-style scanline plan with checkpoint recovery,
-and grades every run against a single sealed JSON.
+![ci](https://github.com/yeezhouyi/ros2_tunnel_explorer/actions/workflows/ci.yml/badge.svg?branch=main)
 
-In the broader two-repo stack (`ros2_tunnel_explorer` + `linear_mpc_controller`)
-this package owns the *upper planning and coverage* layer. The sealed chain
-controller is Nav2 **RotationShim + DWB**; the sister repo's MPC plugin is an
-independently validated controller that is NOT on this sealed chain (see Known
-limits). The two repos publish their canonical numbers in separate JSONs
-(`docs/seal_results.json` here, the controller re-exports from this file as its
-single source of truth).
+面向隧道式环境的 ROS 2 自主探索与覆盖任务原型，基于 Nav2 实现前沿选择、访问历史约束、覆盖执行与检查点恢复。当前运行证据来自 Gazebo 仿真，覆盖执行采用 **RotationShim + DWB**；独立开发的 MPC 控制器尚未接入该正式覆盖链（见 [已知限制](#已知限制)）。
+
+仓库负责 *上层规划与覆盖*：探索模式（前沿选点 → Nav2）与覆盖模式（扫描线规划 → Nav2 → 状态记录 / 覆盖审计）共用同一封板结果（`docs/seal_results.json`）。
 
 ---
 
-## Architecture
+## 演示
 
-```mermaid
-flowchart LR
-    Slam["slam_toolbox / map_server"]
-    Nav2["Nav2 stack<br/>(RotationShim + DWB)"]
-    Front["Frontier explorer<br/>(detector, blacklist, gain + revisit scorer)"]
-    Exec["Coverage executor<br/>(scanline planner + checkpoints + recovery)"]
-    Check["Checkpoint store<br/>(atomic incomplete-reject, digests)"]
-    Cover["Coverage audit<br/>(D-line audit_b6_coverage / audit_b6_triple)"]
-    B6B["(sister repo) linear_mpc_controller<br/>Nav2 plugin -- not on this chain"]
-    Seal["docs/seal_results.json<br/>(single source of truth)"]
+下方动图为一次 Gazebo 仿真回放（首帧为静态终态预览，无需等待动画即可理解场景）：
 
-    Slam --> Nav2 --> Front --> Exec
-    Exec --> Check
-    Exec --> Cover
-    Cover --> Seal
-    Nav2 -. separate .-> B6B
-```
+![隧道探索回放——首帧为完整轨迹 + 扫掠静态预览，第 31 帧起动画回放](results/demo_20260909/explore_replay.gif)
 
-The seald coverage chain is intentionally loop-closed: planner → executor →
-checkpoint store → audit → sealed JSON. Any change to the planner or the
-executor must be reflected in `docs/seal_results.json`; the JSON is the only
-thing the README and the resume cite.
-
----
-
-## Demo
-
-The clip below replays `/odom` recorded during the canonical 29.5-minute
-b6-chain explore run (92,621 odom messages, driven 297.3 m; ROS 2 Gazebo
-simulation -- no physical robot was involved). The green overlay is the
-robot's 0.15 m footprint disc rasterised on a 0.05 m grid. The coverage
-number shown is `covered_disc_area / grid_bounding_box_area` around the
-driven trajectory -- a visual gauge only. The sealed `executor_effective` in
-the table below uses a different denominator (served-map executable mask,
-segment ledger) and is NOT numerically comparable to the clip's last panel.
-
-![Odom replay (Gazebo sim run) -- 0.15 m disc coverage on 0.05 m grid](results/demo_20260909/explore_replay.gif)
+> 记录的 `/odom` 轨迹回放。绿色区域为假定工具半径（0.15 m 盘片）下的扫掠示意；显示比例以轨迹包围矩形为分母，**不是**正式任务覆盖率。
 
 ```bash
-# Reproduce the clip locally (npz is checked in; only re-extract if you
-# have a fresh bag at the same scenario):
+# 复现动图（render 子命令不依赖 ROS 2，只需 numpy + matplotlib + pillow）：
+python scripts/make_explore_demo.py render \
+    --in  results/demo_20260909/track.npz \
+    --gif results/demo_20260909/explore_replay.gif
+
+# 重新抽取 /odom（需要 ROS 2 Jazzy 与原始 bag）：
+source /opt/ros/jazzy/setup.bash
 python scripts/make_explore_demo.py extract \
     --bag /home/zhouyi/b6_chain/explore_map_bag \
     --out  results/demo_20260909/track.npz
-python scripts/make_explore_demo.py render \
-    --in   results/demo_20260909/track.npz \
-    --gif  results/demo_20260909/explore_replay.gif
 ```
 
-> The original `/odom` bag (17–23 MB / run) is **not** stored in the repo; it
-> lives on the maintainer's local `~/b6_chain/explore_map_bag/`. To re-extract
-> you need to either re-run the simulation with
-> `scripts/run_chain_audit.sh` or supply your own bag from the same scenario.
+---
+
+## 三个核心贡献
+
+- **分析与缓解重复访问、入口振荡**：5 跑阶段对照显示，仅引入信息增益 + 重访惩罚就把探索完成时间中位数从 281.5 s 压到 156.0 s（−44.6%），并在入口环场景把平均重访率从 49.3% 降到 34.6%（见 [关键结果](#关键结果)）。
+- **实现覆盖任务执行与恢复**：检查点按摘要原子拒绝不完整写入；覆盖执行器把"是否完成"与"实际扫到多少"两件事分开审计，并按残差预算决策是否追加恢复路径。
+- **区分任务完成与实际面积覆盖**：所有公开数字都来自同一封板 JSON（`docs/seal_results.json`），分母为受服务地图可执行掩码（含 36–37/37 段覆盖率），不会与轨迹包围矩形等视觉估算混淆。
 
 ---
 
-## Conditional comparison tables
+## 架构
 
-### 1. Sealed coverage chain -- 4 formal runs *(condition: static `cleaning_room_rect`, AMCL + Nav2 + coverage executor, odom origin = spawn (0,0))*
+探索与覆盖是两个闭环，不是一条直线：
 
-| metric | min | mean | max |
+```mermaid
+flowchart TB
+  subgraph 探索模式["探索模式"]
+    direction LR
+    SLAM["地图 / 定位<br/>(slam_toolbox / AMCL)"] --> NAV2E["Nav2<br/>(RotationShim + DWB)"] --> FRONT["前沿选点<br/>(探测 + 黑名单 + 信息增益/重访评分)"]
+  end
+  subgraph 覆盖模式["覆盖模式"]
+    direction LR
+    MAP["静态地图<br/>(served-map)"] --> PLAN["覆盖规划<br/>(扫描线 + 检查点)"] --> EXEC["覆盖执行器<br/>(状态机 + 恢复)"] --> NAV2C["Nav2<br/>(RotationShim + DWB)"]
+    EXEC --> CHECK["检查点存储<br/>(摘要原子写)"]
+  end
+  AUDIT["覆盖审计<br/>(executor_effective / 段账本)"] --> SEAL["docs/seal_results.json<br/>(封板单一来源)"]
+  EXEC --> AUDIT
+  PLAN -. 长度验证 .-> AUDIT
+  NAV2E -. 驱动 .-> FRONT
+  NAV2C -. 驱动 .-> EXEC
+```
+
+- **探索路径**：地图/定位 → Nav2 → 前沿选点（闭环）。
+- **覆盖路径**：静态地图 → 覆盖规划/执行器 → Nav2，旁路写到检查点存储与覆盖审计，最后落到封板 JSON。
+- **Nav2 插件集成**（独立小图，不属于上述任一路径）：
+
+  ```mermaid
+  flowchart LR
+    MPC["linear_mpc_controller<br/>(sister repo)"] -. Nav2 plugin .-> NAV2["Nav2"]
+    style MPC stroke-dasharray: 4 3
+  ```
+  该连接未完成端到端验证（见 [已知限制](#已知限制)）。
+
+---
+
+## 关键结果
+
+### 封板覆盖链 — 4 次正式运行
+*条件：`cleaning_room_rect` 静态地图、AMCL + Nav2 + 覆盖执行器；odom 原点 = spawn (0,0)；分母 = 受服务地图可执行掩码 + 段账本。*
+
+| 指标 | min | mean | max |
 |---|---|---|---|
-| `executor_effective` (segment ledger, 36–37/37 covered per run) | 0.8858 | 0.8976 | 0.9125 |
-| `grid_in_mask_frac` (odom samples inside the served-map executable mask) | 0.6365 | 0.7600 | 0.9429 |
-| `driven_m` | 117.3 | — | 172.7 |
-| `executor_repeat_ratio` | 0.62 | — | 0.72 |
-| python-canonical plan length (served-map `plan_from_map`) | — | 60.75 m | — |
+| `executor_effective`（段账本，每跑 36–37/37 覆盖段） | 0.8858 | 0.8976 | 0.9125 |
+| `grid_in_mask_frac`（odom 样本落在可执行掩码内的比例） | 0.6365 | 0.7600 | 0.9429 |
+| 行驶距离 / m | 117.3 | — | 172.7 |
+| 执行重复比 `executor_repeat_ratio` | 0.62 | — | 0.72 |
+| Python 规划长度 / m（`plan_from_map`） | — | 60.75 | — |
 
-Source of truth: `docs/seal_results.json` → `coverage_chain` (sealed at
-`v1.0.0-sealed` @ `b162fc1`).
+来源：`docs/seal_results.json` → `coverage_chain`，封板于 `v1.0.0-sealed` @ `b162fc1`。
 
-### 2. Stage-level exploration progress *(condition: 5 runs / stage, same map, 0.4 m frontier threshold; one statistic per column, never mixed)*
+### 探索阶段进度 — 5 跑 / 阶段
+*条件：同一地图、0.4 m 前沿阈值；一栏一个统计量。*
 
-| stage | change introduced | completion | revisit mean | revisit median | revisit worst | TTC median |
-|---|---|---|---|---|---|---|
-| 2A | nearest-frontier baseline | 80 % (4/5) | — | 20 % | 60 % | 281.5 s |
-| 2B | information gain + revisit penalty v1 | 100 % (5/5) | — | 0 % | 65 % | 156.0 s |
-| 2C | revisit radius = 0.75 m (Stage 2 final) | 100 % (5/5) | — | — | 9 % | 200 s |
-| 3C | topology generalisation, formal | 40 % (2/5) | 49.3 % | 57.1 % | — | — |
-| 3D | entrance-loop recovery | 100 % (5/5) | 34.6 % | 37.5 % | — | — |
+| 阶段 | 引入的改动 | 完成度 | 重访中位 | 重访最大 | TTC 中位 |
+|---|---|---|---|---|---|
+| 2A | 最近前沿基线 | 80 %（4/5） | 20 % | 60 % | 281.5 s |
+| 2B | 信息增益 + 重访惩罚 v1 | 100 %（5/5） | 0 % | 65 % | 156.0 s |
+| 2C | 重访半径 0.75 m（阶段 2 终态） | 100 %（5/5） | — | 9 % | 200 s |
+| 3C | 拓扑泛化（formal） | 40 %（2/5） | 57.1 % | — | — |
+| 3D | 入口环恢复 | 100 %（5/5） | 37.5 % | — | — |
 
-- 2A/2B rows: `docs/stage2b_information_gain_revisit_results.md` aggregate
-  (2B TTC median **156.0 s over 5 runs** = the −44.6 % cited by the resume;
-  the older 4-formal-run median excluding `run_debug` was 174 s).
-- 2C row: Stage 2C record from the repo-history stage pinboard (revisit
-  radius 0.75 m picked as Stage 2 final; no separate results doc under `docs/`).
-- 3C/3D rows: `docs/stage3d_entrance_loop_recovery_results.md` aggregate
-  (mean and median revisit are both reported there).
-- 3C is intentionally a FAIL -- it is the audit input that motivates the 3D
-  recovery stage.
+- 2A/2B：源自 `docs/stage2b_information_gain_revisit_results.md`；2B TTC 中位 **156.0 s / 5 跑**（旧 4 跑样本剔除 `run_debug` 后为 174 s）。
+- 2C：重访半径 0.75 m 作为阶段 2 终态；详见 `docs/stage2c_revisit_radius_075_plan.md`。
+- 3C/3D：源自 `docs/stage3d_entrance_loop_recovery_results.md`。3C 故意记为 FAIL——它正是触发 3D 恢复阶段的审计输入。
 
-### 3. Residual-coverage recovery budget *(condition: served-map r015, r6 baseline)*
-
-| metric | value |
-|---|---|
-| r015 baseline coverage | 0.7364 |
-| residual cells (executable ∧ ~visited) | 1844 (4.61 m², 33 patches) |
-| kept / dropped plans | 21 / 12 (only 20 cells dropped) |
-| recovery path length | 48.35 m |
-| budget cap | 72.5 m (1.5× path) |
-| projected r015 after recovery | 0.9971 (Δ +0.2607) |
-
-Decision: the cost of chasing the last 0.02 of coverage is **0.80× the main
-plan length** — recorded as `BUDGETED_ACCEPT`. Full derivation:
-`results/coverage_closure/closure_report.md`.
-
-### 4. Plan-level coverage miss classification *(condition: r015 same bag, the planner does NOT need to be re-run; the executor is the variable)*
-
-| source | share of missed coverage |
-|---|---|
-| executor deviation (robot ≠ plan trajectory) | 35–41 % of executable cells |
-| planner gap (plan itself misses cells) | ~3 % |
-| row-banding at 0.30 m gap | 19 % (r010 in tight gauge) |
-
-Full overlay + per-cell classification: `artifacts/miss_classification/`.
+其余数字（残差覆盖恢复预算、缺分类）在 [技术文档索引](#技术文档索引) 中按需查阅。
 
 ---
 
-## Reproduce
+## 快速复现
 
 ```bash
-# Plan + coverage audit toolchain (no live sim needed)
+# 1) 规划 + 覆盖审计工具链（不需要实时仿真）
 python scripts/regen_plan_from_masks.py \
     --masks b6_chain/plan/audit_masks.npz \
     --out   chain_day68_evidence/plan.json
 python /path/to/linear_mpc_controller/benchmark_tools/scripts/audit_b6_coverage.py \
     --run_dir <run_dir> --masks b6_chain/plan/audit_masks.npz
 
-# Replay / odom extraction (needs ROS 2 Jazzy for the bag half)
-source /opt/ros/jazzy/setup.bash
-python scripts/make_explore_demo.py extract --bag <bag> --out track.npz
-python scripts/make_explore_demo.py render  --in track.npz --gif explore_replay.gif
+# 2) 演示动图（无需 ROS 2；上方有完整命令）
+python scripts/make_explore_demo.py render --in track.npz --gif explore.gif
 
-# Full WSL2 / Gazebo smoke (long; live run on a maintained machine)
+# 3) WSL2 / Gazebo 全链路（约 18 分钟/跑 × 4 跑 ≈ 1.5 小时；CI 不跑）
 bash scripts/run_chain_audit.sh <run_dir>
 ```
 
 ---
 
-## Known limits
+## 已知限制
 
-- **Live smoke on a fresh bag is a long session** (≈ 18 minutes / run for the
- coverage chain; 4 runs = ≈ 1.5 h). The maintainer runs it on a maintained
- machine; CI does not.
-- **Original /odom bags are not in the repo.** The shipped `track.npz` is a
- down-sampled, time-aligned replay of the canonical b6 run; if you want a
- different run you re-run the simulation.
-- **Coverage gauge uses two reported radii, never swap the denominators.**
- `r015` (footprint 0.15 m) is the headline (`coverage_task.mean ≈ 0.628` over
- the sealed 4 runs); `r010` (0.10 m) is the conservative band (≈ −20 % vs
- `r015`). Both are written next to each other; ranges, not single points.
-- **Quantity-correction gotcha:** the served-map mask is the canonical
- coverage mask. Do NOT count against `b6_chain/map_saved.yaml` (a SLAM frame,
- origin ≈ −2.95 / −3.67); the historical numbers based on that mask have
- been retracted.
-- **The MPC Nav2 plugin from the sister repo is NOT on this chain.** The
- chain controller is RotationShim + DWB. The plugin exists and is graded in
- `linear_mpc_controller`; do not call it from here.
-- **Residual RL (sister repo): frozen**, not part of the claim.
+- **CI 不跑覆盖链烟测**——4 次正式跑约 1.5 小时，由维护者在本机执行；CI 仅做编译、lint、单元测试。徽章反映 CI 状态，非覆盖跑。
+- **原始 `/odom` 包未入库**——仓库里 `track.npz` 是同场景 29.5 min 真实采样的下采样回放；要换场景需要重跑 `run_chain_audit.sh`。
+- **覆盖率口径不能互换**——`r015`（0.15 m 足迹）是头版数字（`coverage_task.mean ≈ 0.628`），`r010`（0.10 m）给出保守区间（约 −20%）。两个数一并展示。
+- **数量校正直觉**：受服务地图掩码是覆盖规范；不要按 `b6_chain/map_saved.yaml`（SLAM 坐标系，原点 ≈ −2.95 / −3.67）做分母——历史数字已撤回。
+- **MPC Nav2 插件未接入覆盖链**：正式链用 RotationShim + DWB；插件在 `linear_mpc_controller` 单独验证。
+- **残差 RL（姐妹仓库）已冻结**，不属于本仓库公开声明。
 
 ---
 
-## Sealed references and engineering archive
+## 技术文档索引
 
-> The first screen above is all a new reader is expected to read.
-> Everything below is engineering archive: stage pinboards, the
-> pre-seal history, and tooling / docs references preserved for
-> accountability.
+> 首屏只要求读完以上。下面是工程档案，按"先用结论、过程可查"原则归档到 `docs/`。
 
-### Sealed / archived tags on this repo
+| 文件 | 内容 |
+|---|---|
+| `docs/seal_results.json` | 封板单一来源（所有公开数字必须由此出） |
+| `docs/coverage_recovery_status.md` | 残差覆盖恢复预算决策 |
+| `docs/chain_semantics.md` | 覆盖口径定义、坐标系修正 |
+| `docs/day68_chain_audit.md` | 覆盖链语义、post-seal2 处置 |
+| `docs/engineering_checklist.md` | 六项能力验收矩阵 |
+| `docs/stage2a_nearest_frontier_baseline_results.md` | 阶段 2A 结果 |
+| `docs/stage2b_information_gain_revisit_results.md` | 阶段 2B 结果（贡献 1 的核心证据） |
+| `docs/stage2c_revisit_radius_075_plan.md` | 阶段 2C 计划与记录 |
+| `docs/stage3d_entrance_loop_recovery_results.md` | 阶段 3D 结果（贡献 1 的入口环部分） |
+| `docs/stage3c_failure_analysis.md` | 阶段 3C 失败分析（3D 触发源） |
+| `docs/coverage_audit_u7.md`, `docs/known_issues.md`, `docs/merge_tree_note.md` | pre-seal 审计与合并树备注 |
+| `docs/jazzy_compatibility.md`, `docs/environment_feasibility.md` | ROS 2 Jazzy 插件命名 / 环境可行性 |
+| `docs/b6_demo.md`, `docs/advanced_round_resume.md` | B6 端到端录像（仿真）/ 进阶轮 ①②③④ 溯源矩阵 |
 
-- **Canonical**: `v1.0.0-sealed` @ `b162fc1` (Day 10 seal; the JSON below is
-  this tag).
-- **Recovery status**: `v1.0.1-recovery-status` @ `5f89915` (README /
-  recovery-pointer pinning; data lives in `docs/coverage_recovery_status.md`).
-- **Historical evidence (kept, not part of the public claim)**:
-  `bline-seal-20260908`, `postseal-20260908`, `postseal2-20260909`,
-  `archive-bline-eventlog-20260908`, `archive-coverage-cleaning-track`,
-  `archive-u9-entrance-hysteresis`.
-
-### Cross-repo result pointer (single source of truth)
-
-All public numbers that show up in the resume or in the table above MUST be
-sourced from `docs/seal_results.json` @ `v1.0.0-sealed` (`b162fc1`). The
-controller repo re-renders this file as its own single source of truth.
-Editing any number on this repo without re-sealing the JSON is a
-seal-violation.
-
-### Stage pinboard (process records -- superseded by the JSON)
-
-| Stage | Description | Status |
-|---|---|---|
-| 0A | WSL2 environment stability | PASS |
-| 0B-1 | known-free navigation (RotationShim + DWB, 60 s, 10/11) | PASS |
-| 0B-D | DWB turn-failure diagnosis | RESOLVED |
-| 1A | frontier algorithms (detector + blacklist + goal selector) | PASS |
-| 1B | ROS 2 node build & unit tests (24+ tests) | PASS |
-| **1C** | nearest-frontier closed-loop integration | PASS |
-| **2A** | nearest-frontier baseline benchmark | PASS (5 runs, 80 %, TTC 281.5 s) |
-| **2B** | information gain + revisit penalty v1 | PASS (5 runs, 100 %, TTC 174 s) |
-| **2C** | revisit-radius robustness (revisit_radius = 0.75 m selected) | PASS |
-| **3A** | Y-world smoke / connectivity | PASS |
-| **3B** | branching-world dry run | PASS (COMPLETED 732 s, 9/9 nav) |
-| **3C** | topology generalisation, formal | FAIL (40 %, 2/5; motivates 3D) |
-| **3D** | entrance-loop recovery | PASS (5/5, 9 mean revisit 34.6 %) |
-
-These rows are not on the front page on purpose -- the goal of the
-README front page is the sealed JSON and its four conditional tables
-above.
-
-### Cleaning-mode and stage3d history
-
-The pre-seal `stage3d-entrance-loop-recovery` development line and the
-cleaning-mode (boustrophedon scanline + map_saved loader) work are preserved
-verbatim in `docs/cleaning_mode.md` and the old section "清洁覆盖模式与全链演示"
-of this README's git history (search for `cleaning_mode/` and `stage3d` in
-`git log -- README.md`). They are **not** the canonical source; the
-`coverage_chain` table above and `docs/seal_results.json` are.
-
-### Engineering audit trail (process records)
-
-- `docs/day68_chain_audit.md` — coverage chain semantics, post-seal2 disposition.
-- `docs/chain_semantics.md` — coverage gauge definitions, mask-frame correction.
-- `docs/seal_results.json` — sealed single source of truth.
-- `docs/coverage_recovery_status.md` — recovery budget decision.
-- `docs/coverage_audit_u7.md`, `docs/stage3c_failure_analysis.md` — pre-seal audits.
-- `docs/coverage_recovery_status.md` — module-level honest pin.
-- `docs/advanced_round_resume.md` — must-do ① ② ③ ④ traceability matrix.
-- `docs/b6_demo.md` — B6 end-to-end live replay on a recorded bag (sim; 1820 poses → MPC live 0.395 m PASS → offline 0.0013 m).
-- `docs/jazzy_compatibility.md` — ROS 2 Jazzy plugin naming and config requirements.
-- `docs/engineering_checklist.md` — six-capability acceptance matrix.
-
-### Result archives (machine-readable)
-
-`chain_day68_evidence/`, `artifacts/cleaning_benchmark/`,
-`artifacts/miss_classification/`, `results/coverage_closure/`,
-`results/demo_20260909/track.npz` + `explore_replay.gif`,
-`run_chain_audit.sh` outputs.
+封板与归档标签：`v1.0.0-sealed` @ `b162fc1`（权威）、`v1.0.1-recovery-status` @ `5f89915`（恢复指针）。
 
 ---
 
-## Layout (one-screen reference)
+## 仓库结构
 
 ```
 tunnel_explorer_bringup/   launch / params / worlds / maps for the simulator
-tunnel_frontier_explorer/  C++ frontier detector + blacklist + goal selector
-tunnel_coverage_explorer/  C++ coverage executor (scanline + checkpoints + recovery)
-scripts/                   audit + planning + run scripts + demo clip generator
-artifacts/                 per-experiment outputs (cleaning, miss classification)
-results/                   coverage_closure / demo_20260909 / per-stage archives
-chain_day68_evidence/      sealed plan + audit JSONs (140 KB checked-in evidence set)
-docs/                      chain_audit / chain_semantics / seal_results /
-                           coverage_recovery_status / advanced_round_resume /
-                           b6_demo / engineering_checklist / jazzy_compatibility
+tunnel_frontier_explorer/  C++ 前沿探测 + 黑名单 + 目标选择
+tunnel_coverage_executor/  C++ 覆盖执行器（扫描线 + 检查点 + 恢复）
+tunnel_coverage_planner/   C++ 覆盖规划器（段生成 / 掩码处理）
+tunnel_map_core/           地图、掩码、坐标系工具
+tunnel_worlds/             Gazebo 世界 + 地图资源
+scripts/                   审计 + 规划 + 跑脚本 + 演示动图生成器
+artifacts/                 单次实验产物（清洁、缺分类）
+results/                   覆盖闭环 / 演示 20260909 / 阶段档案
+chain_day68_evidence/      封板规划 + 审计 JSON（140 KB 入库证据集）
+docs/                      封板 + 阶段记录 + 工程审计（见上）
 ```
 
 ---

@@ -136,7 +136,8 @@ def cmd_render(args: argparse.Namespace) -> int:
 
     covered = np.zeros((ny, nx), dtype=bool)
     frames = args.frames
-    # sample target time per frame
+    intro = max(0, args.intro_frames)
+    # sample target time per frame (animation half only)
     sample_t = np.linspace(0.0, t[-1], frames)
     # index of last odom sample <= sample_t[k]
     idx = np.searchsorted(t, sample_t, side="right")
@@ -170,10 +171,6 @@ def cmd_render(args: argparse.Namespace) -> int:
     txt = a2.text(0.02, 0.97, "", va="top", ha="left",
                   fontfamily="monospace", fontsize=8.6)
 
-    # pre-compute disc masks lazily per-frame (uses memory; acceptable)
-    # For 140 frames * full xy grid * idx entries is too much; instead we
-    # grow `covered` incrementally per frame using new samples only.
-
     # precompute disc-pixel offsets once
     pix = int(np.ceil(DISC_M / GRID_M))
     yy_off, xx_off = np.mgrid[-pix: pix + 1, -pix: pix + 1]
@@ -181,10 +178,54 @@ def cmd_render(args: argparse.Namespace) -> int:
     disc_off_mask = rr <= DISC_M
 
     fps = 12
+    total_area = (xg[-1] - xg[0] + GRID_M) * (yg[-1] - yg[0] + GRID_M)
+    total_driven = float(np.sum(np.hypot(np.diff(x), np.diff(y))))
+
+    # ----------------------------------------------------------------
+    # Pre-compute the final-state disc mask once so the leading "intro"
+    # frames can render the full sweep without paying the O(len(t)) cost
+    # on every intro frame.
+    # ----------------------------------------------------------------
+    covered_full = np.zeros_like(covered)
+    for j in range(len(t)):
+        cx, cy = x[j], y[j]
+        ix = int((cx - x0) / GRID_M)
+        iy = int((cy - y0) / GRID_M)
+        x0i = max(0, ix - pix); x1i = min(nx, ix + pix + 1)
+        y0i = max(0, iy - pix); y1i = min(ny, iy + pix + 1)
+        dx0 = x0i - (ix - pix); dx1 = disc_off_mask.shape[1] - ((ix + pix + 1) - x1i)
+        dy0 = y0i - (iy - pix); dy1 = disc_off_mask.shape[0] - ((iy + pix + 1) - y1i)
+        covered_full[y0i: y1i, x0i: x1i] |= disc_off_mask[dy0: dy1, dx0: dx1]
+
+    covered_view = np.zeros_like(covered)
+    prev_k = [0]
+    th = np.linspace(0, 2 * np.pi, 40)
 
     def draw(k):
-        kk = int(min(idx[k], len(t) - 1))
-        # grow `covered` up to sample kk
+        if k < intro:
+            # STATIC FINAL-STATE PREVIEW: a reader should understand the
+            # scene in the first frame without waiting for the animation.
+            cov_img.set_data(covered_full.astype(float))
+            trail.set_data(x, y)
+            head.set_data([x[0]], [y[0]])
+            disc_artist.set_data(x[0] + DISC_M * np.cos(th),
+                                 y[0] + DISC_M * np.sin(th))
+            cov_area = float(covered_full.sum()) * cell_area
+            cov_pct = cov_area / total_area * 100.0
+            txt.set_text(
+                f"intro   = static final-state preview\n"
+                f"frame   = {k + 1:3d} / {frames + intro}\n"
+                f"t_real  = {t[-1]:6.1f} s   (~{t[-1] / 60:4.1f} min)\n"
+                f"driven  = {total_driven:6.1f} m\n"
+                f"covered = {cov_area:5.2f} m^2  ({cov_pct:4.1f}% of box)\n"
+                f"samples = {len(t):5d} / {len(t)}\n"
+                f"gauge   = 0.15 m disc / 0.05 m grid\n"
+                f"frame   = odom frame, spawn (0,0)\n"
+                f"-> animation starts at frame {intro + 1}")
+            return [cov_img, trail, head, disc_artist, txt]
+        # ANIMATION: incremental grow on covered_view
+        real_k = k - intro
+        kk = int(min(idx[real_k], len(t) - 1))
         for j in range(prev_k[0], kk + 1):
             cx, cy = x[j], y[j]
             ix = int((cx - x0) / GRID_M)
@@ -193,25 +234,20 @@ def cmd_render(args: argparse.Namespace) -> int:
             y0i = max(0, iy - pix); y1i = min(ny, iy + pix + 1)
             dx0 = x0i - (ix - pix); dx1 = disc_off_mask.shape[1] - ((ix + pix + 1) - x1i)
             dy0 = y0i - (iy - pix); dy1 = disc_off_mask.shape[0] - ((iy + pix + 1) - y1i)
-            covered[y0i: y1i, x0i: x1i] |= disc_off_mask[dy0: dy1, dx0: dx1]
+            covered_view[y0i: y1i, x0i: x1i] |= disc_off_mask[dy0: dy1, dx0: dx1]
         prev_k[0] = kk + 1
-        # update visuals
-        cov_img.set_data(covered.astype(float))
+        cov_img.set_data(covered_view.astype(float))
         trail.set_data(x[: kk + 1], y[: kk + 1])
         head.set_data([x[kk]], [y[kk]])
-        # current disc ring
-        th = np.linspace(0, 2 * np.pi, 40)
         disc_artist.set_data(x[kk] + DISC_M * np.cos(th),
                              y[kk] + DISC_M * np.sin(th))
-        # stats
         t_real = float(t[kk])
         driven = float(np.sum(np.hypot(np.diff(x[: kk + 1]),
                                         np.diff(y[: kk + 1]))))
-        cov_area = float(covered.sum()) * cell_area
-        total_area = (xg[-1] - xg[0] + GRID_M) * (yg[-1] - yg[0] + GRID_M)
+        cov_area = float(covered_view.sum()) * cell_area
         cov_pct = cov_area / total_area * 100.0
         txt.set_text(
-            f"frame = {k + 1:3d} / {frames}\n"
+            f"frame   = {k + 1:3d} / {frames + intro}\n"
             f"t_real  = {t_real:6.1f} s   (~{t_real / 60:4.1f} min)\n"
             f"driven  = {driven:6.1f} m\n"
             f"covered = {cov_area:5.2f} m^2  ({cov_pct:4.1f}% of box)\n"
@@ -220,13 +256,14 @@ def cmd_render(args: argparse.Namespace) -> int:
             f"frame   = odom frame, spawn (0,0)")
         return [cov_img, trail, head, disc_artist, txt]
 
-    prev_k = [0]
     import matplotlib.animation as manim
-    anim = manim.FuncAnimation(fig, draw, frames=frames,
+    anim = manim.FuncAnimation(fig, draw,
+                               frames=frames + intro,
                                interval=1000 // fps, blit=False)
     writer = PillowWriter(fps=fps)
     anim.save(out, writer=writer)
-    print(f"render: wrote {out} ({out.stat().st_size / 1e6:.2f} MB)")
+    print(f"render: wrote {out} ({out.stat().st_size / 1e6:.2f} MB, "
+          f"{frames + intro} frames; intro={intro})")
     return 0
 
 
@@ -239,7 +276,12 @@ def main() -> int:
     pr = sub.add_parser("render")
     pr.add_argument("--in", dest="inp", required=True)
     pr.add_argument("--gif", required=True)
-    pr.add_argument("--frames", type=int, default=140)
+    pr.add_argument("--frames", type=int, default=140,
+                    help="animation frames (after the static intro)")
+    pr.add_argument("--intro-frames", type=int, default=30,
+                    help="static final-state preview frames shown at the "
+                         "head of the clip so a reader understands the scene "
+                         "without waiting for the animation to start")
     args = ap.parse_args()
     return {"extract": cmd_extract, "render": cmd_render}[args.cmd](args)
 
