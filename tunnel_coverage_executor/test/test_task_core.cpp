@@ -174,5 +174,46 @@ TEST(CoverageTaskCoreTest, CheckpointIdMismatchThrows)
   }
 }
 
+TEST(CoverageTaskCoreTest, IncompleteCheckpointIsRejectedAtomically)
+{
+  auto segs = makeSegments(3);
+  CoverageTaskCore core(segs, CoverageTaskCore::Options{});
+
+  // dispositions shorter than the plan (truncated / incomplete checkpoint):
+  // refused BEFORE anything is applied -- no OOB read, no partial resume
+  // that could silently skip or duplicate work.
+  CheckpointData cp;
+  cp.segment_ids = {"w0", "w1", "w2"};
+  cp.dispositions = {DISP_COVERED};          // too short
+  {
+    bool threw = false;
+    try {
+      core.applyCheckpointDispositions(cp);
+    } catch (const std::invalid_argument &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+  }
+  // Core state untouched: nothing was covered, all pending.
+  EXPECT_EQ(core.countCovered(), 0u);
+  EXPECT_EQ(core.countPending(), 3u);
+  EXPECT_EQ(core.disposition(0), DISP_PENDING);
+
+  // dispositions longer than the plan: also refused, state untouched.
+  CheckpointData cp2;
+  cp2.segment_ids = {"w0", "w1", "w2"};
+  cp2.dispositions = {DISP_COVERED, DISP_PENDING, DISP_EXEMPT, DISP_COVERED};
+  {
+    bool threw = false;
+    try {
+      core.applyCheckpointDispositions(cp2);
+    } catch (const std::invalid_argument &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+  }
+  EXPECT_EQ(core.countPending(), 3u);
+}
+
 }  // namespace
 }  // namespace tunnel_coverage_executor

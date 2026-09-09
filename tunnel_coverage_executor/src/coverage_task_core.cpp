@@ -153,6 +153,11 @@ void CoverageTaskCore::applyCheckpointDispositions(
     throw std::invalid_argument(
       "CoverageTaskCore — checkpoint segment count differs from plan");
   }
+  if (checkpoint.dispositions.size() != segments_.size()) {
+    throw std::invalid_argument(
+      "CoverageTaskCore — checkpoint dispositions count differs from plan "
+      "(incomplete checkpoint must not partially apply)");
+  }
   for (std::size_t i = 0; i < segments_.size(); ++i) {
     if (checkpoint.segment_ids[i] != segments_[i].id) {
       throw std::invalid_argument(
