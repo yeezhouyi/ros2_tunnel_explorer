@@ -1,0 +1,32 @@
+name: CI (colcon build + unit tests)
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  colcon-build:
+    runs-on: ubuntu-latest
+    container: ros:jazzy
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: |
+          apt-get update && apt-get install -y \
+            python3-colcon-common-extensions python3-pytest
+      - name: build
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install \
+            --packages-select tunnel_map_core tunnel_coverage_msgs \
+            tunnel_coverage_planner tunnel_coverage_executor
+      - name: unit tests (no Gazebo needed)
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test --packages-select tunnel_map_core \
+            tunnel_coverage_planner tunnel_coverage_executor
+          colcon test-result --verbose
