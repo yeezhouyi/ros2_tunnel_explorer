@@ -523,6 +523,9 @@ Apache-2.0
 
 ## 清洁覆盖链(合并树,Day 6-8,canonical)
 
+> **对外主口径**：覆盖率一律以 `docs/seal_results.json` `coverage_chain` 为唯一来源
+> （r015 为封面半径、r010 为保守带，两半径均报、范围不单点；run7/8 扩展统计只作参考、不对外单引）。
+
 - **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
   cleaning_mode/test 合一;python boustrophedon 为**served-map 复现口径**)。
 - **完整链 4 次运行**(仿真图 = 静态 `cleaning_room_rect`,map_server 日志实证;
