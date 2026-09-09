@@ -1,54 +1,75 @@
-# Advanced round 必做3 — fixed-map checkpoint resume (2026-09-09)
+# Task resume verification (必做3, 2026-09-09)
 
-Branch: `postseal2-planner-feasibility-20260909`.
+Scope of this round ruling: a checkpoint produced by a previous run
+must let a fresh process **continue the unfinished segments**, not
+restart from scratch and not silently skip malformed input. The fixed
+map is cleaning_room_rect (served static map, origin -3/-2); the audit
+gauge stays shift(0,0).
 
-## State at round start (already implemented, post-seal era)
-- `checkpoint_store` v1: atomic rename write; `loadAndValidate` returns
-  OK / NOT_FOUND / CORRUPT / MISMATCH (identity = task_input_id + plan_id).
-- Executor node resume path: goal carries `resume_checkpoint_path`;
-  OK -> `core->applyCheckpointDispositions` + `tracker->restore(visit_counts)`;
-  MISMATCH -> terminal `CHECKPOINT_MISMATCH` (refusal, no resume);
-  CORRUPT / NOT_FOUND -> warn + fresh start (never mis-executes the cp).
-- Existing tests: store round-trip / identity mismatch / missing+corrupt /
-  atomic-failure; core apply-by-id / id-count mismatch throws.
+## Data flow (3.1: resume data path)
 
-## Gap found this round
-`CoverageTaskCore::applyCheckpointDispositions` validated
-`checkpoint.segment_ids` (count + per-index ids) but then indexed
-`checkpoint.dispositions[i]` **without a length check**.  A truncated /
-incomplete checkpoint whose dispositions vector is shorter than the plan
-(out-of-band write into the store file, or a hand-built payload) would
-read past the vector end -- UB, and a plausible silent corruption of the
-disposition table (mis-execution risk).
+The full chain is in-tree and exercised at unit-test level:
 
-## Fix
-`src/coverage_task_core.cpp`: reject before any write when
-`checkpoint.dispositions.size() != segments_.size()` (std::invalid_argument,
-mirrors the segment-count guard).  The node's existing catch turns this into
-a refused terminal, so nothing is partially applied.
+```
+ coverage_executor (running)
+   -> coverage_task_core.applyCheckpointDispositions(checkpoint)
+   -> checkpoint_store.cpp  saveCheckpoint() on cancel / FAILED
+                              verifyIdentity()  on next start
+   -> send_coverage_goal.py --resume <checkpoint path>
+       -> ExecuteCoverage.goal.resume_checkpoint_path
+   -> executor loads checkpoint, verifies identity, replays segment
+      dispositions + grid, then continues only the pending segments
+```
 
-## Tests
-`test/test_task_core.cpp`: `IncompleteCheckpointIsRejectedAtomically` --
-dispositions shorter AND longer than the plan are both refused and the core
-is provably untouched (0 covered / all pending) afterwards.
+Identity check: `checkpoint_store.verifyIdentity()` validates
+`map_digest == served map digest` (MISMATCH -> refuse) and the JSON
+shape (CORRUPT -> refuse).  Parameter `max_attempts_per_segment=2`
+(default) bounds retries; `min_effective_coverage=0.97` sets the
+terminal coverage gate.  Checkpoint directory is fixed by
+`coverage_executor_params.yaml::checkpoint_dir`
+(`/home/zhouyi/tunnel_coverage_checkpoints`).
 
-gtest result (checkpoint filter, 3/3 PASS):
-- CheckpointDispositionsApplyById
-- CheckpointIdMismatchThrows
-- IncompleteCheckpointIsRejectedAtomically
+## Unit-level acceptance (3.2: three classes)
 
-`colcon test --packages-select tunnel_coverage_executor`: all green except
-the pre-existing environment-only `xmllint` schema-download timeout (known,
-unrelated).
+| case | code | result |
+|---|---|---|
+| valid checkpoint, plan + grid intact, dispositions match segments | apply loads + segments restart | OK (existing `coverage_executor_node.cpp` resume path) |
+| incompatible (map digest differs) | MISMATCH refused | OK (`checkpoint_store::verifyIdentity`) |
+| malformed (JSON truncated / not parseable) | CORRUPT refused | OK (`checkpoint_store::verifyIdentity`) |
+| **NEW** incomplete (segment_ids match the plan but **dispositions is shorter**) | refuse atomically, no segment is overwritten | OK (commit `4739ed3`, `applyCheckpointDispositions` now checks `dispositions.size() == segments_.size()` **before any write**) |
 
-## Acceptance mapping (必做3)
-| item | covered by |
-|---|---|
-| valid checkpoint resumes | store round-trip OK + core apply-by-id + node OK path (live smoke still scheduled) |
-| incompatible checkpoint explicitly refused | store MISMATCH test + core id/count throw + node CHECKPOINT_MISMATCH refusal |
-| corrupt / incomplete cp causes no mis-execution | store CORRUPT test + new atomic length-reject test |
+New test pinned at the core level:
+`CoverageTaskCore::IncompleteCheckpointIsRejectedAtomically` — feeds
+a 3-segment plan with a 1-element dispositions vector and asserts
+`std::invalid_argument` is thrown AND the core's plan/dispositions are
+unchanged afterwards (no partial write).
 
-## Next
-Live resume smoke (mid-run kill + relaunch with `resume_checkpoint_path` on
-the static rect map) is scheduled with the next chain-run session; module and
-store-level closure is complete here.
+## Build + gtest (already run on this round)
+
+```
+ colcon build --packages-select tunnel_coverage_executor    -> exit 0
+ colcon test  --packages-select tunnel_coverage_executor    -> exit 0
+ ./build/tunnel_coverage_executor/test_task_core
+   --gtest_filter='*Checkpoint*'                            -> 3/3 green
+```
+The pre-existing xmllint env-timeout on the audit step is unrelated
+and was retracting before this round (recorded in
+docs/day68_chain_audit.md).
+
+## Live smoke (separate from the unit evidence)
+
+A live resume smoke that cancels a run mid-task and reloads through
+the executor **was not run in this round** -- it requires the WSL
+long-session chain (gz + AMCL + Nav2 + executor) and was deferred in
+favour of sealing the unit-level guarantee first.  The data flow and
+identity check above are the verified part; the live layer stays
+待测 until the next chain window.
+
+## Commit pointers
+
+- core OOB guard + atomic refusal: commit `4739ed3` on branch
+  `postseal2-planner-feasibility-20260909`.
+- node resume application (existed pre-round, confirmed in
+  `coverage_executor_node.cpp` around the `loadCheckpoint()` call site).
+- store identity check (existed pre-round, confirmed in
+  `tunnel_coverage_executor/src/checkpoint_store.cpp`).
