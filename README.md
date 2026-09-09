@@ -7,10 +7,12 @@ executor that runs a boustrophedon-style scanline plan with checkpoint recovery,
 and grades every run against a single sealed JSON.
 
 In the broader two-repo stack (`ros2_tunnel_explorer` + `linear_mpc_controller`)
-this package owns the *upper planning and coverage* layer; the controller in the
-sister repo runs the path on `/cmd_vel`. The two repos publish their canonical
-numbers in separate JSONs (`docs/seal_results.json` here, the controller
-re-exports from this file as its single source of truth).
+this package owns the *upper planning and coverage* layer. The sealed chain
+controller is Nav2 **RotationShim + DWB**; the sister repo's MPC plugin is an
+independently validated controller that is NOT on this sealed chain (see Known
+limits). The two repos publish their canonical numbers in separate JSONs
+(`docs/seal_results.json` here, the controller re-exports from this file as its
+single source of truth).
 
 ---
 
@@ -43,14 +45,16 @@ thing the README and the resume cite.
 
 ## Demo
 
-The clip below is a real `/odom` replay of the canonical 29.5-minute b6-chain
-explore run (92,621 odom messages, driven 297.3 m on a real bag). The green
-overlay is the **0.15 m footprint disc on a 0.05 m grid**, which is exactly the
-gauge that `seal_results.coverage_chain` uses for `executor_effective`. So the
-final panel number is directly comparable to the headline number in the table
-below.
+The clip below replays `/odom` recorded during the canonical 29.5-minute
+b6-chain explore run (92,621 odom messages, driven 297.3 m; ROS 2 Gazebo
+simulation -- no physical robot was involved). The green overlay is the
+robot's 0.15 m footprint disc rasterised on a 0.05 m grid. The coverage
+number shown is `covered_disc_area / grid_bounding_box_area` around the
+driven trajectory -- a visual gauge only. The sealed `executor_effective` in
+the table below uses a different denominator (served-map executable mask,
+segment ledger) and is NOT numerically comparable to the clip's last panel.
 
-![Real /odom replay -- 0.15 m disc coverage on 0.05 m grid](results/demo_20260909/explore_replay.gif)
+![Odom replay (Gazebo sim run) -- 0.15 m disc coverage on 0.05 m grid](results/demo_20260909/explore_replay.gif)
 
 ```bash
 # Reproduce the clip locally (npz is checked in; only re-extract if you
@@ -85,19 +89,25 @@ python scripts/make_explore_demo.py render \
 Source of truth: `docs/seal_results.json` → `coverage_chain` (sealed at
 `v1.0.0-sealed` @ `b162fc1`).
 
-### 2. Stage-level exploration progress *(condition: 5 runs / stage, same map, 0.4 m frontier threshold)*
+### 2. Stage-level exploration progress *(condition: 5 runs / stage, same map, 0.4 m frontier threshold; one statistic per column, never mixed)*
 
-| stage | change introduced | completion | revisit median | TTC median |
-|---|---|---|---|---|
-| 1C | nearest-frontier baseline | 80 % | — | 281.5 s |
-| 2B | information gain + revisit penalty v1 | 100 % | 0 % | 174 s |
-| 2C | revisit radius = 0.75 m (Stage 2 final) | 100 % | 9 % (worst) | 200 s |
-| 3C | topology generalisation, formal | 40 % (2/5) | 49.3 % | — |
-| 3D | entrance-loop recovery | 100 % (5/5) | 34.6 % | — |
+| stage | change introduced | completion | revisit mean | revisit median | revisit worst | TTC median |
+|---|---|---|---|---|---|---|
+| 2A | nearest-frontier baseline | 80 % (4/5) | — | 20 % | 60 % | 281.5 s |
+| 2B | information gain + revisit penalty v1 | 100 % (5/5) | — | 0 % | 65 % | 156.0 s |
+| 2C | revisit radius = 0.75 m (Stage 2 final) | 100 % (5/5) | — | — | 9 % | 200 s |
+| 3C | topology generalisation, formal | 40 % (2/5) | 49.3 % | 57.1 % | — | — |
+| 3D | entrance-loop recovery | 100 % (5/5) | 34.6 % | 37.5 % | — | — |
 
-3C is intentionally reported as a FAIL -- it is the audit input that motivates
-the recovery stage. All numbers in this row come from the per-stage archive
-under `docs/`.
+- 2A/2B rows: `docs/stage2b_information_gain_revisit_results.md` aggregate
+  (2B TTC median **156.0 s over 5 runs** = the −44.6 % cited by the resume;
+  the older 4-formal-run median excluding `run_debug` was 174 s).
+- 2C row: Stage 2C record from the repo-history stage pinboard (revisit
+  radius 0.75 m picked as Stage 2 final; no separate results doc under `docs/`).
+- 3C/3D rows: `docs/stage3d_entrance_loop_recovery_results.md` aggregate
+  (mean and median revisit are both reported there).
+- 3C is intentionally a FAIL -- it is the audit input that motivates the 3D
+  recovery stage.
 
 ### 3. Residual-coverage recovery budget *(condition: served-map r015, r6 baseline)*
 
@@ -236,7 +246,7 @@ of this README's git history (search for `cleaning_mode/` and `stage3d` in
 - `docs/coverage_audit_u7.md`, `docs/stage3c_failure_analysis.md` — pre-seal audits.
 - `docs/coverage_recovery_status.md` — module-level honest pin.
 - `docs/advanced_round_resume.md` — must-do ① ② ③ ④ traceability matrix.
-- `docs/b6_demo.md` — B6 end-to-end live replay (1820 poses → MPC live 0.395 m PASS → offline 0.0013 m).
+- `docs/b6_demo.md` — B6 end-to-end live replay on a recorded bag (sim; 1820 poses → MPC live 0.395 m PASS → offline 0.0013 m).
 - `docs/jazzy_compatibility.md` — ROS 2 Jazzy plugin naming and config requirements.
 - `docs/engineering_checklist.md` — six-capability acceptance matrix.
 

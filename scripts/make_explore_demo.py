@@ -2,10 +2,13 @@
 """Generate the README demo clip for the tunnel explorer.
 
 extract   -- pull /odom from a local rosbag2 (mcap) bag into a small npz
-render    -- render the saved npz as a real-time replay animation of the
-             robot path and a disc-coverage growth (0.15 m footprint disc
-             on a 0.05 m grid -- the SAME gauge as seal_results.json
-             coverage_chain / audit_b6_triple, no map alignment needed).
+render    -- render the saved npz as a replay animation of the robot path
+             and a disc-coverage growth (0.15 m footprint disc on a
+             0.05 m grid -- same footprint/grid CELL geometry as
+             seal_results.json's coverage audit, but this clip's DENOMINATOR
+             is the grid bounding box of the driven trajectory, NOT the
+             served-map executable mask; the two percentages are not
+             numerically comparable).
 
 This script's render half depends only on numpy + matplotlib + pillow; the
 extract half additionally needs ROS 2 (rosbag2_py + nav_msgs).  The shipped
@@ -23,12 +26,14 @@ Usage:
       --in   results/demo_20260909/track.npz \
       --gif  results/demo_20260909/explore_replay.gif
 
-Honest labeling: the trail and coverage growth are reconstructed from the
-recorded /odom in the supplied bag -- no Gazebo replay.  The displayed
-"driven m" and "covered m^2" follow the same disc-0.15 / 0.05-m grid
-gauge that seal_results.json cites, so the final covered area can be
-compared to seal_results.coverage_chain.executor_effective (~0.90 over
-4 runs).
+Honest labeling: the trail and coverage growth are reconstructed from
+/odom recorded during a ROS 2 Gazebo simulation run of the canonical b6
+chain -- no physical robot and no second Gazebo replay are involved.  The
+displayed "covered m^2" is `disc-covered cells * cell_area`; the
+percentage divides that by the trajectory bounding-box area.  This is a
+visual gauge ONLY and is not comparable with
+seal_results.coverage_chain.executor_effective (~0.90 over 4 runs), whose
+denominator is the served-map executable mask.
 """
 from __future__ import annotations
 
