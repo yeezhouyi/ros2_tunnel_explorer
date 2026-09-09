@@ -1,566 +1,271 @@
 # ros2_tunnel_explorer
 
-面向隧道巡检场景的 ROS2 自主探索与风险感知路径规划系统。
+**A ROS 2 autonomous-exploration and risk-aware coverage system for tunnel-like
+environments.** It picks frontiers under Nav2 (RotationShim + DWB), ranks them
+by information gain / revisit cost, executes the chain through a coverage
+executor that runs a boustrophedon-style scanline plan with checkpoint recovery,
+and grades every run against a single sealed JSON.
 
-> **仓库导航（对外展示口径）**
-> - **Default branch**: `main`
-> - **Current development head**: `main`（变动分支，不作为对外引用口径）
-> - **Canonical sealed baseline**: `v1.0.0-sealed` @ `b162fc1`（本 README 状态表与
->   `docs/seal_results.json` 均为该基线口径；对外只引 tag/固定 commit，不引变动分支）
-> - **Historical development branches**: `stage4*`、`bline-*`、`postseal2-*`
->   等为实验/过程线，保留作工程证据，不代表当前成果口径
+In the broader two-repo stack (`ros2_tunnel_explorer` + `linear_mpc_controller`)
+this package owns the *upper planning and coverage* layer; the controller in the
+sister repo runs the path on `/cmd_vel`. The two repos publish their canonical
+numbers in separate JSONs (`docs/seal_results.json` here, the controller
+re-exports from this file as its single source of truth).
 
-## Status
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Slam["slam_toolbox / map_server"]
+    Nav2["Nav2 stack<br/>(RotationShim + DWB)"]
+    Front["Frontier explorer<br/>(detector, blacklist, gain + revisit scorer)"]
+    Exec["Coverage executor<br/>(scanline planner + checkpoints + recovery)"]
+    Check["Checkpoint store<br/>(atomic incomplete-reject, digests)"]
+    Cover["Coverage audit<br/>(D-line audit_b6_coverage / audit_b6_triple)"]
+    B6B["(sister repo) linear_mpc_controller<br/>Nav2 plugin -- not on this chain"]
+    Seal["docs/seal_results.json<br/>(single source of truth)"]
+
+    Slam --> Nav2 --> Front --> Exec
+    Exec --> Check
+    Exec --> Cover
+    Cover --> Seal
+    Nav2 -. separate .-> B6B
+```
+
+The seald coverage chain is intentionally loop-closed: planner → executor →
+checkpoint store → audit → sealed JSON. Any change to the planner or the
+executor must be reflected in `docs/seal_results.json`; the JSON is the only
+thing the README and the resume cite.
+
+---
+
+## Demo
+
+The clip below is a real `/odom` replay of the canonical 29.5-minute b6-chain
+explore run (92,621 odom messages, driven 297.3 m on a real bag). The green
+overlay is the **0.15 m footprint disc on a 0.05 m grid**, which is exactly the
+gauge that `seal_results.coverage_chain` uses for `executor_effective`. So the
+final panel number is directly comparable to the headline number in the table
+below.
+
+![Real /odom replay -- 0.15 m disc coverage on 0.05 m grid](results/demo_20260909/explore_replay.gif)
+
+```bash
+# Reproduce the clip locally (npz is checked in; only re-extract if you
+# have a fresh bag at the same scenario):
+python scripts/make_explore_demo.py extract \
+    --bag /home/zhouyi/b6_chain/explore_map_bag \
+    --out  results/demo_20260909/track.npz
+python scripts/make_explore_demo.py render \
+    --in   results/demo_20260909/track.npz \
+    --gif  results/demo_20260909/explore_replay.gif
+```
+
+> The original `/odom` bag (17–23 MB / run) is **not** stored in the repo; it
+> lives on the maintainer's local `~/b6_chain/explore_map_bag/`. To re-extract
+> you need to either re-run the simulation with
+> `scripts/run_chain_audit.sh` or supply your own bag from the same scenario.
+
+---
+
+## Conditional comparison tables
+
+### 1. Sealed coverage chain -- 4 formal runs *(condition: static `cleaning_room_rect`, AMCL + Nav2 + coverage executor, odom origin = spawn (0,0))*
+
+| metric | min | mean | max |
+|---|---|---|---|
+| `executor_effective` (segment ledger, 36–37/37 covered per run) | 0.8858 | 0.8976 | 0.9125 |
+| `grid_in_mask_frac` (odom samples inside the served-map executable mask) | 0.6365 | 0.7600 | 0.9429 |
+| `driven_m` | 117.3 | — | 172.7 |
+| `executor_repeat_ratio` | 0.62 | — | 0.72 |
+| python-canonical plan length (served-map `plan_from_map`) | — | 60.75 m | — |
+
+Source of truth: `docs/seal_results.json` → `coverage_chain` (sealed at
+`v1.0.0-sealed` @ `b162fc1`).
+
+### 2. Stage-level exploration progress *(condition: 5 runs / stage, same map, 0.4 m frontier threshold)*
+
+| stage | change introduced | completion | revisit median | TTC median |
+|---|---|---|---|---|
+| 1C | nearest-frontier baseline | 80 % | — | 281.5 s |
+| 2B | information gain + revisit penalty v1 | 100 % | 0 % | 174 s |
+| 2C | revisit radius = 0.75 m (Stage 2 final) | 100 % | 9 % (worst) | 200 s |
+| 3C | topology generalisation, formal | 40 % (2/5) | 49.3 % | — |
+| 3D | entrance-loop recovery | 100 % (5/5) | 34.6 % | — |
+
+3C is intentionally reported as a FAIL -- it is the audit input that motivates
+the recovery stage. All numbers in this row come from the per-stage archive
+under `docs/`.
+
+### 3. Residual-coverage recovery budget *(condition: served-map r015, r6 baseline)*
+
+| metric | value |
+|---|---|
+| r015 baseline coverage | 0.7364 |
+| residual cells (executable ∧ ~visited) | 1844 (4.61 m², 33 patches) |
+| kept / dropped plans | 21 / 12 (only 20 cells dropped) |
+| recovery path length | 48.35 m |
+| budget cap | 72.5 m (1.5× path) |
+| projected r015 after recovery | 0.9971 (Δ +0.2607) |
+
+Decision: the cost of chasing the last 0.02 of coverage is **0.80× the main
+plan length** — recorded as `BUDGETED_ACCEPT`. Full derivation:
+`results/coverage_closure/closure_report.md`.
+
+### 4. Plan-level coverage miss classification *(condition: r015 same bag, the planner does NOT need to be re-run; the executor is the variable)*
+
+| source | share of missed coverage |
+|---|---|
+| executor deviation (robot ≠ plan trajectory) | 35–41 % of executable cells |
+| planner gap (plan itself misses cells) | ~3 % |
+| row-banding at 0.30 m gap | 19 % (r010 in tight gauge) |
+
+Full overlay + per-cell classification: `artifacts/miss_classification/`.
+
+---
+
+## Reproduce
+
+```bash
+# Plan + coverage audit toolchain (no live sim needed)
+python scripts/regen_plan_from_masks.py \
+    --masks b6_chain/plan/audit_masks.npz \
+    --out   chain_day68_evidence/plan.json
+python /path/to/linear_mpc_controller/benchmark_tools/scripts/audit_b6_coverage.py \
+    --run_dir <run_dir> --masks b6_chain/plan/audit_masks.npz
+
+# Replay / odom extraction (needs ROS 2 Jazzy for the bag half)
+source /opt/ros/jazzy/setup.bash
+python scripts/make_explore_demo.py extract --bag <bag> --out track.npz
+python scripts/make_explore_demo.py render  --in track.npz --gif explore_replay.gif
+
+# Full WSL2 / Gazebo smoke (long; live run on a maintained machine)
+bash scripts/run_chain_audit.sh <run_dir>
+```
+
+---
+
+## Known limits
+
+- **Live smoke on a fresh bag is a long session** (≈ 18 minutes / run for the
+ coverage chain; 4 runs = ≈ 1.5 h). The maintainer runs it on a maintained
+ machine; CI does not.
+- **Original /odom bags are not in the repo.** The shipped `track.npz` is a
+ down-sampled, time-aligned replay of the canonical b6 run; if you want a
+ different run you re-run the simulation.
+- **Coverage gauge uses two reported radii, never swap the denominators.**
+ `r015` (footprint 0.15 m) is the headline (`coverage_task.mean ≈ 0.628` over
+ the sealed 4 runs); `r010` (0.10 m) is the conservative band (≈ −20 % vs
+ `r015`). Both are written next to each other; ranges, not single points.
+- **Quantity-correction gotcha:** the served-map mask is the canonical
+ coverage mask. Do NOT count against `b6_chain/map_saved.yaml` (a SLAM frame,
+ origin ≈ −2.95 / −3.67); the historical numbers based on that mask have
+ been retracted.
+- **The MPC Nav2 plugin from the sister repo is NOT on this chain.** The
+ chain controller is RotationShim + DWB. The plugin exists and is graded in
+ `linear_mpc_controller`; do not call it from here.
+- **Residual RL (sister repo): frozen**, not part of the claim.
+
+---
+
+## Sealed references and engineering archive
+
+> The first screen above is all a new reader is expected to read.
+> Everything below is engineering archive: stage pinboards, the
+> pre-seal history, and tooling / docs references preserved for
+> accountability.
+
+### Sealed / archived tags on this repo
+
+- **Canonical**: `v1.0.0-sealed` @ `b162fc1` (Day 10 seal; the JSON below is
+  this tag).
+- **Recovery status**: `v1.0.1-recovery-status` @ `5f89915` (README /
+  recovery-pointer pinning; data lives in `docs/coverage_recovery_status.md`).
+- **Historical evidence (kept, not part of the public claim)**:
+  `bline-seal-20260908`, `postseal-20260908`, `postseal2-20260909`,
+  `archive-bline-eventlog-20260908`, `archive-coverage-cleaning-track`,
+  `archive-u9-entrance-hysteresis`.
+
+### Cross-repo result pointer (single source of truth)
+
+All public numbers that show up in the resume or in the table above MUST be
+sourced from `docs/seal_results.json` @ `v1.0.0-sealed` (`b162fc1`). The
+controller repo re-renders this file as its own single source of truth.
+Editing any number on this repo without re-sealing the JSON is a
+seal-violation.
+
+### Stage pinboard (process records -- superseded by the JSON)
 
 | Stage | Description | Status |
-|-------|-------------|--------|
-| 0A | WSL2 Environment Stability | **PASS** |
-| 0B-1 | Known-Free Navigation (RotationShim + DWB, 60s, 10/11) | **PASS** |
-| 0B-D | DWB Turn Failure Diagnosis | **RESOLVED** |
-| 1A | Frontier Algorithms (detector + blacklist + goal selector) | **PASS** |
-| 1B | ROS2 Node Build & Unit Tests (24+ tests) | **PASS** |
-| **1C** | **Nearest-Frontier Closed-Loop Integration** | **PASS** |
-| **2A** | **Nearest-Frontier Baseline Benchmark** | **PASS** — 5 runs, 80% completion, TTC median 281.5 s |
-| **2B** | **Information Gain + Revisit Penalty v1** | **PASS** — 5 runs, 100% completion, TTC median 174 s (4 formal runs, excl. run_debug), revisit median 0% |
-| **2C** | **Revisit Radius Robustness** | **PASS** — revisit_radius=0.75 selected as Stage 2 final; 5 runs, 100% completion, worst revisit 9%, median TTC 200 s |
-| **3A** | **Y-World Smoke/Connectivity** | **PASS** — Y-shaped branching tunnel SDF, 2.5 m corridor, thick slabs, goal projection + cooldown, spawn at (0,1) |
-| **3B** | **Branching-World Dry Run** | **PASS** — COMPLETED at 732 s, 9/9 nav success, 5 unique bins, 44.4% revisit |
-| **3C** | **Topology Generalization (Formal)** | **FAIL** — completion 40% (2/5), mean revisit 49.3%, entrance-frontier oscillation despite 100% Nav2 success |
-| **3D** | **Entrance-Loop Recovery** | **PASS** — 5/5 explorer-level completion, mean revisit 34.6%, recovery probe 4/4 success, Nav2 100% |
-
-### Stage 1C Baseline Metrics
-
-| Metric | Result |
-|--------|--------|
-| Navigation goal success rate | **18/18 = 100 %** |
-| Unique frontier goals visited | **12** |
-| Autonomous exploration runtime | **5+ min** |
-| Robot movement range | **(0, 0) → (3.88, 0.40)** |
-| Node crashes | **0** |
-| Nav2 lifecycle failures | **0** |
-| Near-goal filter activations (`centroid < 0.50 m`) | **12/18** |
-
-**Known baseline limitation**: nearest-frontier selection creates local revisit
-cycles in bounded areas. This is the baseline for comparison — Stage 2
-introduces information gain and revisit-aware scoring to quantify improvement.
-
-See [Stage 1C Smoke Results](docs/stage1c_smoke_results.md) for full details.
-
-## Prerequisites
-
-- Ubuntu 24.04 (or WSL2 with Ubuntu 24.04)
-- ROS2 Jazzy Jalisco
-- Gazebo Harmonic
-
-### Install system dependencies
-
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-  ros-jazzy-navigation2 \
-  ros-jazzy-nav2-bringup \
-  ros-jazzy-slam-toolbox \
-  ros-jazzy-nav2-minimal-tb3-sim
-```
-
-## Build
-
-```bash
-cd ~/ros2_ws
-colcon build --packages-select tunnel_explorer_bringup benchmark_tools tunnel_frontier_explorer
-source install/setup.bash
-```
-
-## Quick Start (Stage 0: Environment Verification)
-
-### 1. Clean up stale processes
-
-```bash
-./scripts/cleanup_simulation.sh
-```
-
-This kills leftover `gz sim` processes, stops the ROS2 daemon, and removes
-stale Fast DDS shared-memory files in `/dev/shm`.
-
-### 2. Launch simulation
-
-```bash
-ros2 launch tunnel_explorer_bringup stage0_simulation.launch.py headless:=True
-```
-
-> **WSL2 note**: Use `headless:=True` to avoid Gazebo GUI conflicts.
-> The `gz sim` GUI client can accidentally start a second server with an
-> empty world. See [WSL2 Restart Checklist](#wsl2-restart-checklist).
-
-This starts:
-- TurtleBot3 in Gazebo Harmonic (headless simulation)
-- SLAM Toolbox (online async mapping)
-- Nav2 navigation stack
-- RViz2 with pre-configured view (launches separately even in headless mode)
-
-### 3. Record metrics
-
-In a second terminal:
-
-```bash
-ros2 run benchmark_tools record_stage0_metrics.py \
-    --duration 600 \
-    --output-dir /tmp/stage0_results
-```
-
-### 4. Run navigation smoke test
-
-In a third terminal (after SLAM has built a map):
-
-```bash
-ros2 run benchmark_tools run_navigation_smoke_test.py \
-    --output-dir /tmp/stage0b_results
-```
-
-**Important**: Adjust goal coordinates in `benchmark_tools/config/stage0b_goals.yaml`
-to match your current SLAM map.
-
-### 5. Review results
-
-```bash
-cat /tmp/stage0_results/stage0_metrics.json
-cat /tmp/stage0_results/stage0_metrics.md
-cat /tmp/stage0b_results/stage0b_results.json
-cat /tmp/stage0b_results/stage0b_results.md
-```
-
-## Quick Start (Stage 1: Frontier-Based Exploration)
-
-Stage 1 uses `tunnel_frontier_explorer` (C++) to detect frontier clusters from
-the `/map` occupancy grid and send nearest-frontier goals to Nav2.
-
-> **Stage 1C verified**: 18/18 navigation goals succeeded, 12 unique frontiers
-> visited, 0 crashes over 5+ min. See [Smoke Results](docs/stage1c_smoke_results.md).
-
-### Prerequisites
-
-- Stage 0 simulation stack running (Gazebo + SLAM Toolbox + Nav2)
-- Map partially built (SLAM has published at least one map)
-
-### Launch frontier explorer
-
-In a separate terminal while the simulation is running:
-
-```bash
-ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py
-```
-
-The node will:
-1. Wait for a map from SLAM Toolbox
-2. Wait for the Nav2 `/navigate_to_pose` action server
-3. Detect frontier clusters (free cells adjacent to unknown space)
-4. Select the nearest non-blacklisted frontier
-5. Send a `NavigateToPose` goal using the cluster's representative cell
-6. On failure, blacklist the goal with a configurable radius and timeout
-7. Publish RViz markers on `~/frontier_markers`
-
-### RViz visualization
-
-Add a MarkerArray display in RViz subscribed to `/frontier_markers`:
-
-| Namespace | Color | Shape | Description |
-|-----------|-------|-------|-------------|
-| `frontier_clusters` | Green | Points | Centroids of all detected frontier clusters |
-| `selected_goal` | Red | Sphere | Currently selected navigation goal |
-| `blacklisted` | Grey | Sphere | Temporarily forbidden failed goals |
-| `too_close_frontiers` | Yellow | Points | Candidate goals within `min_goal_distance_meters` (filtered by FrontierGoalSelector) |
-| `scored_frontiers` | Red→Green | Sphere List | Scored candidates (`information_gain_revisit` strategy), size ∝ score |
-
-### Parameters
-
-All parameters are in `config/frontier_explorer_params.yaml`. Key parameters:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `exploration_period_seconds` | 1.0 | Main loop interval (Hz) |
-| `cooldown_seconds` | 5.0 | Pause between navigation goals |
-| `goal_timeout_seconds` | 60.0 | Single-goal timeout before cancel + blacklist |
-| `min_cluster_size` | 10 | Minimum cells for a frontier cluster |
-| `frontier_neighbor_connectivity` | 4 | Neighbourhood for frontier detection |
-| `cluster_connectivity` | 8 | Neighbourhood for BFS clustering |
-| `blacklist_radius_meters` | 0.5 | Radius to blacklist failed goals |
-| `blacklist_timeout_seconds` | 60.0 | Blacklist expiry time |
-| `orient_goal_toward_frontier` | true | Face the robot toward the goal |
-| `min_goal_distance_meters` | 0.50 | Minimum distance from robot to goal; prevents false-success within Nav2 `xy_goal_tolerance` |
-| `selection_strategy` | `nearest` | Goal selection: `nearest` (Stage 2A baseline) or `information_gain_revisit` (Stage 2B) |
-| `information_gain_radius_meters` | 0.75 | Radius (m) to count unknown cells around each candidate goal |
-| `revisit_radius_meters` | 0.50 | Radius (m) for detecting previously visited areas |
-| `max_revisit_count` | 3 | Clamp for revisit count (prevents extreme penalty) |
-| `weight_information_gain` | 1.0 | Score weight for normalised information gain |
-| `weight_distance` | 1.0 | Score weight for normalised distance (subtracted) |
-| `weight_revisit` | 1.5 | Score weight for normalised revisit penalty (subtracted) |
-
-### Architecture
-
-- `FrontierDetector`: Pure C++ class (no ROS deps) for BFS frontier detection,
-  clustering, centroid computation, and representative-cell selection.
-- `FrontierBlacklist`: Pure C++ class (no ROS deps) for radius + timeout-based
-  goal blacklisting with injectable clocks for deterministic testing.
-- `FrontierGoalSelector`: Pure C++ class (no ROS deps) that enforces
-  `min_goal_distance_meters` from robot to goal; searches cluster for
-  alternative free cells when the representative is too close, preventing
-  false-success cycles caused by Nav2 `xy_goal_tolerance`.  Also provides
-  `selectAll()` to return all distance-filtered candidates for external scoring.
-- `FrontierScorer` (Stage 2B): Pure C++ class (no ROS deps) that scores candidate
-  goals by information gain (unknown cells within circular radius), distance,
-  and revisit penalty.  Supports deterministic tie-breaking.
-- `FrontierVisitHistory` (Stage 2B): Pure C++ class (no ROS deps) that records
-  goals accepted by the Nav2 action server for use in revisit penalty calculation.
-- `TunnelFrontierExplorerNode`: ROS2 node with 6-state machine
-  (WAITING_FOR_MAP → WAITING_FOR_NAV2 → IDLE → NAVIGATING → COOLDOWN → COMPLETED).
-  Supports `nearest` and `information_gain_revisit` selection strategies.
-
-## Packages
-
-| Package | Language | Description |
-|---------|----------|-------------|
-| `tunnel_explorer_bringup` | Python/YAML | Launch files, configs, RViz views |
-| `benchmark_tools` | Python | Metrics recording, analysis, plotting |
-| `tunnel_frontier_explorer` | C++ | Frontier-based autonomous exploration (Stage 1, nearest-frontier baseline) |
-| `tunnel_centerline_extractor` | C++ | Tunnel centerline distance field extraction (Planned — Stage 4) |
-| `tunnel_aware_planner` | C++ | Tunnel-aware global planner plugin for Nav2 (Planned — Stage 5) |
-| `tunnel_worlds` | Python/SDF | Parametric tunnel world generator (Planned — Stage 3) |
-
-## Quick Start (Stage 2A: Baseline Benchmark)
-
-Stage 2A runs the nearest-frontier baseline 5× to collect repeatability metrics.
-This establishes the baseline for comparing tunnel-aware scoring (Stage 2B+).
-
-The benchmark supports **early-stop-on-completed**: in bounded environments the
-robot may finish exploration in 2-3 minutes. Instead of waiting the full 600 s,
-the benchmark detects the COMPLETED state, applies a grace window, and finishes
-early. The primary metric becomes **time-to-completion** rather than goals-per-time.
-
-### Single run
-
-```bash
-./scripts/run_stage2a_benchmark.sh \
-  --output-dir ~/stage2a_benchmark \
-  --duration 600 \
-  --run-id 01 \
-  --stop-on-completed true \
-  --completed-grace-seconds 20 \
-  --stall-timeout-seconds 90
-```
-
-### Full benchmark (5 runs)
-
-```bash
-for i in $(seq -w 1 5); do
-  ./scripts/run_stage2a_benchmark.sh \
-    --output-dir ~/stage2a_benchmark \
-    --duration 600 \
-    --run-id "${i}" \
-    --stop-on-completed true \
-    --completed-grace-seconds 20 \
-    --stall-timeout-seconds 90
-  sleep 10
-done
-```
-
-### Aggregation (after all runs)
-
-```bash
-./scripts/aggregate_stage2a_results.sh ~/stage2a_benchmark
-```
-
-Only `COMPLETED` runs are included in the aggregate. Excluded runs are listed
-separately. Use `--allow-timeout` to include `TIMEOUT` runs.
-
-### Each run produces
-
-- `benchmark_results.md` — goals, success rate, unique goals, run status, completion time
-- `benchmark_results.json` — structured JSON metrics (used by aggregation)
-- `frontier_explorer.log` — full explorer log
-- `bag/` — ROS2 bag with `/map`, `/odom`, `/cmd_vel`, `/tf`, markers
-- `attempt_NN/` — per-attempt subdirectory (when `--runtime-retries > 0`)
-
-Run with `--wait-time 90` on WSL2 to account for DDS discovery delay (default).
-
-### Run status reference
-
-| Status | Meaning |
-|--------|---------|
-| `COMPLETED` | Exploration finished within the max duration |
-| `TIMEOUT` | Max duration reached before completion |
-| `STALLED` | Explorer alive but no progress for N seconds (DDS/SLAM/TF stall) |
-| `CRASHED` | Explorer node crashed during run |
-| `STARTUP_FAILED` | Nav2 not ready after retries |
-| `INVALID_ORCHESTRATION_TERMINATION` | Run externally terminated or outputs incomplete |
-
-### STALLED Injection Test
-
-For verifying the STALLED detection path:
-
-```bash
-./scripts/run_stage2a_benchmark.sh \
-  --output-dir ~/stage2a_benchmark_test \
-  --duration 180 \
-  --run-id stall_test \
-  --stop-on-completed true \
-  --stall-timeout-seconds 45 \
-  --inject-stall-after-seconds 20
-```
-
-Expected: run enters STALLED at ~65 s (20 + 45, with ±5 s monitor jitter).
-This is a **test-only** feature. Formal benchmarks must not use `--inject-stall-after-seconds`.
-
-## Quick Start (Stage 2B: Information Gain + Revisit Penalty)
-
-Stage 2B adds information gain weighting and revisit penalty to frontier goal
-selection.  **PASS** — 5-run A/B benchmark vs Stage 2A baseline shows:
-
-| Metric | 2A (nearest) | 2B (info+revisit) | Change |
-|--------|:------------:|:-----------------:|:------:|
-| Completion rate | 80 % | **100 %** | +25 % |
-| TTC median | 281.5 s | **156.0 s** | −44.6 % |
-| Revisit rate median | 20 % | **0 %** | −100 % |
-| Nav goal success | 97.7 % | **100 %** | +2.3 pp |
-
-See [docs/stage2b_information_gain_revisit_results.md](docs/stage2b_information_gain_revisit_results.md).
-
-Use the `information_gain_revisit` strategy via a separate params file.
-
-### Launch with Stage 2B strategy
-
-```bash
-ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py \
-  params_file:=<path-to-install>/config/frontier_explorer_params_info_revisit.yaml
-```
-
-The explorer node will log scoring details for each dispatched goal:
+|---|---|---|
+| 0A | WSL2 environment stability | PASS |
+| 0B-1 | known-free navigation (RotationShim + DWB, 60 s, 10/11) | PASS |
+| 0B-D | DWB turn-failure diagnosis | RESOLVED |
+| 1A | frontier algorithms (detector + blacklist + goal selector) | PASS |
+| 1B | ROS 2 node build & unit tests (24+ tests) | PASS |
+| **1C** | nearest-frontier closed-loop integration | PASS |
+| **2A** | nearest-frontier baseline benchmark | PASS (5 runs, 80 %, TTC 281.5 s) |
+| **2B** | information gain + revisit penalty v1 | PASS (5 runs, 100 %, TTC 174 s) |
+| **2C** | revisit-radius robustness (revisit_radius = 0.75 m selected) | PASS |
+| **3A** | Y-world smoke / connectivity | PASS |
+| **3B** | branching-world dry run | PASS (COMPLETED 732 s, 9/9 nav) |
+| **3C** | topology generalisation, formal | FAIL (40 %, 2/5; motivates 3D) |
+| **3D** | entrance-loop recovery | PASS (5/5, 9 mean revisit 34.6 %) |
+
+These rows are not on the front page on purpose -- the goal of the
+README front page is the sealed JSON and its four conditional tables
+above.
+
+### Cleaning-mode and stage3d history
+
+The pre-seal `stage3d-entrance-loop-recovery` development line and the
+cleaning-mode (boustrophedon scanline + map_saved loader) work are preserved
+verbatim in `docs/cleaning_mode.md` and the old section "清洁覆盖模式与全链演示"
+of this README's git history (search for `cleaning_mode/` and `stage3d` in
+`git log -- README.md`). They are **not** the canonical source; the
+`coverage_chain` table above and `docs/seal_results.json` are.
+
+### Engineering audit trail (process records)
+
+- `docs/day68_chain_audit.md` — coverage chain semantics, post-seal2 disposition.
+- `docs/chain_semantics.md` — coverage gauge definitions, mask-frame correction.
+- `docs/seal_results.json` — sealed single source of truth.
+- `docs/coverage_recovery_status.md` — recovery budget decision.
+- `docs/coverage_audit_u7.md`, `docs/stage3c_failure_analysis.md` — pre-seal audits.
+- `docs/coverage_recovery_status.md` — module-level honest pin.
+- `docs/advanced_round_resume.md` — must-do ① ② ③ ④ traceability matrix.
+- `docs/b6_demo.md` — B6 end-to-end live replay (1820 poses → MPC live 0.395 m PASS → offline 0.0013 m).
+- `docs/jazzy_compatibility.md` — ROS 2 Jazzy plugin naming and config requirements.
+- `docs/engineering_checklist.md` — six-capability acceptance matrix.
+
+### Result archives (machine-readable)
+
+`chain_day68_evidence/`, `artifacts/cleaning_benchmark/`,
+`artifacts/miss_classification/`, `results/coverage_closure/`,
+`results/demo_20260909/track.npz` + `explore_replay.gif`,
+`run_chain_audit.sh` outputs.
+
+---
+
+## Layout (one-screen reference)
 
 ```
-Goal: (1.23, 4.56) dist=2.34 gain=42(raw)/3.76(tr)/0.85(norm) revisit=0(raw)/0(cl)/0.00(norm) score=0.85 [5 cand]
+tunnel_explorer_bringup/   launch / params / worlds / maps for the simulator
+tunnel_frontier_explorer/  C++ frontier detector + blacklist + goal selector
+tunnel_coverage_explorer/  C++ coverage executor (scanline + checkpoints + recovery)
+scripts/                   audit + planning + run scripts + demo clip generator
+artifacts/                 per-experiment outputs (cleaning, miss classification)
+results/                   coverage_closure / demo_20260909 / per-stage archives
+chain_day68_evidence/      sealed plan + audit JSONs (140 KB checked-in evidence set)
+docs/                      chain_audit / chain_semantics / seal_results /
+                           coverage_recovery_status / advanced_round_resume /
+                           b6_demo / engineering_checklist / jazzy_compatibility
 ```
 
-### Stage 2A baseline (unchanged)
-
-```bash
-ros2 launch tunnel_frontier_explorer frontier_explorer.launch.py
-```
-
-This still uses the default `nearest` strategy — exactly the same behaviour as
-Stage 2A.
-
-### Stage 2B benchmark variant
-
-```bash
-./scripts/run_stage2a_benchmark.sh \
-  --output-dir ~/stage2b_benchmark \
-  --duration 600 \
-  --run-id 01 \
-  --stop-on-completed true \
-  --completed-grace-seconds 20 \
-  --stall-timeout-seconds 90 \
-  --explorer-params-file <path-to-install>/config/frontier_explorer_params_info_revisit.yaml
-```
-
-The benchmark records `selection_strategy`, all scoring parameters, and a
-SHA-256 hash of the params file in each run's `benchmark_results.json`.
-
-## Quick Start (Stage 3: Topology Generalization)
-
-Stage 3 tests whether the Stage 2C exploration policy (information-gain +
-revisit-suppression) generalizes beyond L-shaped corridors to a Y-shaped
-branching tunnel with bifurcated geometry.
-
-### Y-World
-
-A custom Gazebo SDF world (`tunnel_worlds/worlds/branching_tunnel_y.sdf`)
-with a 2.5 m trunk corridor splitting into left (120°) and right (60°) branches.
-Negative-space geometry (thick solid slabs instead of thin walls) ensures only
-the intended Y-shaped tunnel interior can be mapped as free space.
-
-### Stage 3 Explorer Additions
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `goal_projection_enabled` | true | Pull frontier goal inward toward robot |
-| `goal_projection_distance` | 0.4 | Projection distance (m) |
-| `goal_projection_min_remaining_distance` | 0.6 | Min robot-to-projected-goal distance (m) |
-| `goal_success_cooldown_seconds` | 120.0 | Radius-based cooldown after success (s) |
-| `goal_success_cooldown_radius` | 1.0 | Cooldown region radius (m) |
-| `loop_detection_enabled` | true | Sliding-window entrance-loop detector |
-| `loop_window_size` | 6 | Recent goal bin window |
-| `loop_unique_bins_threshold` | 2 | Trigger when unique bins ≤ 2 |
-| `loop_min_successes` | 3 | Trigger when successes ≥ 3 in window |
-| `recovery_probe_distances` | [1.2, 1.0, 0.8] | Forward probe distances (m) |
-| `recovery_probe_angle_offsets_deg` | [0, 20, -20, 35, -35] | Probe angle offsets (°) |
-| `recovery_probe_cooldown_seconds` | 30.0 | Cooldown between probes (s) |
-| `recovery_max_attempts` | 3 | Max probes before declaring STALLED |
-
-### Launch Stage 3 benchmark
-
-```bash
-WORLD_PATH="$(ros2 pkg prefix tunnel_worlds)/share/tunnel_worlds/worlds/branching_tunnel_y.sdf"
-PARAMS_PATH="$(ros2 pkg prefix tunnel_frontier_explorer)/share/tunnel_frontier_explorer/config/frontier_explorer_params_info_revisit_r075.yaml"
-
-./scripts/run_stage2a_benchmark.sh \
-  --explorer-params-file "$PARAMS_PATH" \
-  --world "$WORLD_PATH" \
-  --stop-on-completed true \
-  --stall-timeout-seconds 240 \
-  --duration 900
-```
-
-Nav2 uses `nav2_params_rotation_shim.yaml` with relaxed goal checker:
-`xy_goal_tolerance: 0.35, yaw_goal_tolerance: 6.28`.
-
-### Stage 3 Results
-
-| Stage | Result | Completion | Mean unique bins | Mean revisit | Notes |
-|-------|--------|------------|-----------------|-------------|-------|
-| 3A | PASS | smoke | — | — | World geometry + launch verified |
-| 3B | PASS | dry run | 5.0 | 44.4% | Single-run validation |
-| 3C | FAIL | 40% (2/5) | 4.0 | 49.3% | Entrance-frontier oscillation |
-| **3D** | **PASS** | **100% (5/5)** | **6.0** | **34.6%** | Loop detector + recovery probe |
-
-Stage 3D recovery probe: dispatched in 4/5 runs, succeeded 4/4 times, consistently
-broke entrance oscillation enabling trunk-depth frontier discovery. Nav2 execution
-remained 100% across all stages.
-
-> **Note**: 3/5 Stage 3D runs were classified as TIMEOUT by the benchmark harness
-> due to late-arriving map messages resetting the stable-completion grace period.
-> All 5 runs logged `"No frontiers for 10 cycles — exploration complete"` at the
-> explorer level. Actual completion was 100%.
-
-### Artifacts
-
-- `artifacts/stage3c_branching_y_failed_eval/` — Stage 3C formal results
-- `artifacts/stage3d_entrance_loop_recovery/` — Stage 3D formal results + source snapshot
-
-## Documentation
-
-- [Environment Feasibility](docs/environment_feasibility.md) — Stage 0 verification
-- [DWB Turn Diagnosis](docs/stage0b_dwb_turn_diagnosis.md) — Stage 0B-D diagnostic plan
-- [Stage 1C Smoke Results](docs/stage1c_smoke_results.md) — nearest-frontier baseline verification
-- [Stage 2A Baseline Results](docs/stage2a_nearest_frontier_baseline_results.md) — 5-run nearest-frontier baseline
-- [Stage 2B Design](docs/stage2b_information_gain_revisit_design.md) — information gain + revisit penalty scoring
-- [ROS2 Jazzy Compatibility](docs/jazzy_compatibility.md)
-- [Stage 3D Entrance-Loop Recovery Results](docs/stage3d_entrance_loop_recovery_results.md)
-
-## Roadmap
-
-| Milestone | Description | Status |
-|-----------|-------------|--------|
-| **v0.1** | Stage 3D finalization, benchmark harness cleanup | ✅ `v0.1-stage3d-clean` |
-| **Stage 4A** | Tunnel centerline / distance-field / branch-point extraction | 🚧 planned |
-| **Stage 4B** | Centerline + wall-risk features in frontier scorer | 📋 |
-| **Stage 4C** | L / Y / T / cross / dead-end multi-topology benchmark suite | 📋 |
-| **Stage 5** | Nav2 Tunnel-Aware Planner plugin (wall risk + centerline deviation cost) | 📋 |
-| **Stage 6** | Sensor degradation, narrow passages, dynamic obstacles, rosbag validation | 📋 |
-| **Stage 7** | Hardware / HITL validation | 📋 |
-
-## WSL2 Restart Checklist
-
-When restarting the simulation on WSL2, follow these steps to avoid
-common issues:
-
-1. **Clean up processes**: `./scripts/cleanup_simulation.sh`
-   - Kills stale `gz sim` and `ros_gz_bridge` processes
-   - Stops the ROS2 daemon
-   - Removes Fast DDS shared-memory files from `/dev/shm`
-2. **Launch headless**: Use `headless:=True` — the Gazebo GUI client
-   (`gz sim -g`) can inadvertently start a second server with an empty
-   `empty.sdf` world if a server is not already running, which conflicts
-   with the main simulation.
-3. **Wait for Nav2 (WSL2 DDS discovery delay)**: Under WSL2, the ROS2 daemon
-   takes 60–90 s to discover all lifecycle nodes even after they are running.
-   Run `scripts/wait_for_nav2_active.sh` — if it times out at 60 s, retry;
-   the nodes are likely up but not yet discovered. The benchmark script uses
-   `--wait-time 90` by default.
-4. **SLAM Toolbox lifecycle race**: In rare cases, `slam_toolbox` gets stuck
-   in `unconfigured [1]` because the lifecycle manager sends CONFIGURE/ACTIVATE
-   before the node is ready. Workaround:
-   ```bash
-   ros2 lifecycle set /slam_toolbox configure
-   ros2 lifecycle set /slam_toolbox activate
-   ```
-   After activation, Nav2 nodes that depend on the `map` frame will come up.
-5. **Verify topics**: After launch, confirm `/clock`, `/scan`, and `/map`
-   are publishing before starting metrics recording.
-6. **Monitor DDS**: If you see `Failed init_port fastrtps_port7000:
-   open_and_lock_file failed` errors, run `cleanup_simulation.sh` again.
-
-## ROS2 Jazzy Compatibility Notes
-
-This project targets ROS2 Jazzy. Notable differences from Humble-era examples:
-
-- **Plugin names**: Use `::` separator (e.g., `nav2_navfn_planner::NavfnPlanner`)
-  instead of `/` (e.g., `nav2_navfn_planner/NavfnPlanner`).
-- **Additional server configs**: Jazzy's Nav2 requires `collision_monitor`,
-  `docking_server`, `route_server`, and `map_saver` sections in `nav2_params.yaml`.
-- **bt_navigator**: Requires explicit `navigators` plugin declarations.
-
-See [docs/jazzy_compatibility.md](docs/jazzy_compatibility.md) for full details.
+---
 
 ## License
 
 Apache-2.0
-
-## 清洁覆盖模式与全链演示(2026-09-06,stage3d 分支)
-
-> 以下 stage3d 分支口径小节为历史记录;合并树 canonical 链与封板数字见文末
-> **"清洁覆盖链(合并树,Day 6-8)"** 与 `docs/seal_results.json`。
-
-
-
-- **cleaning_mode/**:弓形覆盖规划器(障碍膨胀/扫描线分解/A* 连接/
-  覆盖规划/路径平滑)+ map_saver PGM/YAML 加载器。测试 16/16 绿。
-- **30-run 离线基准**:boustrophedon 中位路径 **414.5m** vs 逐行基线
-  797.4m(**短 48%**),规划 11ms,全部 OK(`artifacts/cleaning_benchmark/`)。
-- **B6 全链**:探索(录制 1820 位姿)→ MPC `path_file` 跟踪(live 位移
-  0.395m PASS)→ 离线审计(子集 e_y_rms **0.0013m**)。序列见
-  `docs/b6_demo.md`,首跑结果与覆盖率回归见 `docs/coverage_audit_u7.md`。
-- **U7 覆盖率审计**:弦标记 bug 代码级定位→修复(addSweptPath)→
-  回归验证(stamped 4700 ≈ odom 重建 4698);exempt 分母(31%)列为
-  下一审计对象。全部为 WSL2/Gazebo 仿真结果。
-
-## 清洁覆盖链(合并树,Day 6-8,canonical)
-
-> **对外主口径**：覆盖率一律以 `docs/seal_results.json` `coverage_chain` 为唯一来源
-> （r015 为封面半径、r010 为保守带，两半径均报、范围不单点；run7/8 扩展统计只作参考、不对外单引）。
-
-- **树**:`bline-merge-20260908`(stage3d 默认 + coverage 四 C++ 包 +
-  cleaning_mode/test 合一;python boustrophedon 为**served-map 复现口径**)。
-- **完整链 4 次运行**(仿真图 = 静态 `cleaning_room_rect`,map_server 日志实证;
-  AMCL + Nav2 RotationShim/DWB + coverage executor,36–37/37 段):executor
-  台账 effective **0.886–0.913**(均值 0.898,±1.5%,executor 内部口径);
-  离线栅格审计(coverage gauge = 同图 plan_from_map masks,executable
-  6996 格;odom 原点 = spawn (0,0),shift 已实证):odom 采样在掩膜内
-  比例 0.64–0.94;`coverage_task` footprint **0.10: 0.452–0.576**(均值
-  0.504)、**0.15(= 行距 0.30 一半,无缝): 0.559–0.736**(均值 0.628,
-  封面口径);`coverage_known_free`@0.15 0.537–0.686;0.10 相对 0.15
-  少记 18–22%。实驶 117–173 m vs python-canonical 计划 60.75 m。
-  **两半径均报、r015 为封面数、r010 为保守带;永不对换分母,报范围
-  不报单点**。记录:`docs/day68_chain_audit.md`。
-- **量具修正(重要)**:仿真从未使用 `b6_chain/map_saved.yaml`(SLAM 图,
-  origin −2.947/−3.665);早期以 map_saved masks 计的栅格数
-  (历史 0.2486/0.2836 与首版 day68 0.209–0.367)为**帧错位产物,已撤回**。
-  executor 内部 C++ ScanlinePlanner 规划的段结构 ≠ python 路由
-  (python 在该图 = 60.75 m/22 点),栅格指标是驱动路径对图域 executable
-  mask 的面积覆盖,非 plan-trace 比对。详见 `docs/chain_semantics.md`。
-- **启动就绪竞态已修**:客户端进程内等待 `/coverage/status`
-  phase==READY_IDLE 再发 goal(run6 首试即受理)。
-- **控制器边界**:链控制器 = RotationShim + DWB;线性 MPC Nav2 插件
-  (B6B)为独立交付物(沙箱门禁 1 4/4 / 2a 7/7 / 2b 8/8;终端减速负向
-  对照 intact 1.98 m vs 去除后 13.14–13.16 m,Δ11.18 m),**未接入本链、
-  无硬实时声明**。
-- **复现边界**:从 tag/默认分支一条命令复现的是**计划与审计工具链**
-  (`scripts/regen_plan_from_masks.py`、D 线 `audit_b6_coverage.py` /
-  `audit_b6_triple.py`)。masks/计划/审计 JSON 证据集已入库
-  `chain_day68_evidence/`(140 KB);原始 /odom bag(17–23 MB/run)
-  仍为本地不入库——需重跑仿真生成
-  (`scripts/run_chain_audit.sh <run_dir> <masks_npz>`)。
-- **样本扩展(post-seal)**:run7/run8 已补跑,6-run 扩展统计
-  (r015 均值 0.620,0.476–0.736)见 `docs/day68_chain_audit.md`
-  扩展段;封板 4-run 数字不变。
-- **封板数字**:README results 表与简历均以 `docs/seal_results.json`
-  为唯一来源(机器可读、含复现命令与 SHA);本仓库不含任何 U9 时代
-  不可复现数字。
