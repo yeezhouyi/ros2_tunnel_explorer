@@ -14,7 +14,9 @@ jobs:
       - name: deps
         run: |
           apt-get update && apt-get install -y \
-            python3-colcon-common-extensions python3-pytest
+            python3-colcon-common-extensions python3-pytest \
+            ros-jazzy-nav2-msgs ros-jazzy-nav2-bringup \
+            ros-jazzy-robot-state-publisher ros-jazzy-tf2_ros
       - name: build
         shell: bash
         run: |
