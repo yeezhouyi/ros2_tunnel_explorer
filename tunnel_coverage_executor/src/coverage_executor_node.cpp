@@ -17,6 +17,7 @@
 #include <tf2/exceptions.h>
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <filesystem>
 #include <memory>
@@ -707,9 +708,9 @@ void CoverageExecutorNode::sendNavigate(
     {
       if (gen != child_gen_) {
         RCLCPP_WARN(get_logger(),
-          "Stale NavigateToPose result ignored (gen %llu != %llu)",
-          static_cast<unsigned long long>(gen),
-          static_cast<unsigned long long>(child_gen_));
+          "Stale NavigateToPose result ignored (gen %" PRIu64 " != %" PRIu64 ")",
+          gen,
+          child_gen_);
         return;
       }
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
@@ -774,9 +775,9 @@ void CoverageExecutorNode::sendFollow(
     {
       if (gen != child_gen_) {
         RCLCPP_WARN(get_logger(),
-          "Stale FollowPath result ignored (gen %llu != %llu)",
-          static_cast<unsigned long long>(gen),
-          static_cast<unsigned long long>(child_gen_));
+          "Stale FollowPath result ignored (gen %" PRIu64 " != %" PRIu64 ")",
+          gen,
+          child_gen_);
         return;
       }
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED;
